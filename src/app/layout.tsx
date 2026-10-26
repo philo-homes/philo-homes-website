@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,8 +14,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Philo Homes",
-  description: "Luxury real estate and AI-powered room design",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Philo Homes | AI Interior Design for Your Room",
+    template: "%s | Philo Homes",
+  },
+  description:
+    "Capture your room, pick a style, and get a professionally curated AI interior design with furniture you can buy in one click.",
+  applicationName: SITE_NAME,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: SITE_NAME,
+    title: "Philo Homes | AI Interior Design for Your Room",
+    description:
+      "Capture your room, pick a style, and get a professionally curated AI interior design with furniture you can buy in one click.",
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image" },
+  robots: { index: true, follow: true },
   icons: {
     icon: "/logo/logo icon.svg",
     shortcut: "/logo/logo icon.svg",
