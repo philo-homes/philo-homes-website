@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Shell from '@/components/Shell'
 import { Button, Field } from '@/components/Section'
 import { useAuth } from '@/context/AuthContext'
+import { requestPasswordReset } from '@/lib/medusa'
 
 function LoginInner() {
   const { signIn, signUp } = useAuth()
@@ -18,6 +19,7 @@ function LoginInner() {
   const [last, setLast] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,6 +55,16 @@ function LoginInner() {
       <button onClick={() => setMode(mode === 'in' ? 'up' : 'in')} className="block mx-auto mt-4 text-sm text-[#4B4B4B] underline">
         {mode === 'in' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
       </button>
+      {mode === 'in' && (
+        <button
+          type="button"
+          disabled={!email || resetSent}
+          onClick={async () => { await requestPasswordReset(email); setResetSent(true) }}
+          className="block mx-auto mt-2 text-xs text-[#8E8E8E] underline disabled:no-underline"
+        >
+          {resetSent ? 'If that email has an account, a reset link is on its way.' : 'Forgot password? Email me a reset link'}
+        </button>
+      )}
     </div>
   )
 }

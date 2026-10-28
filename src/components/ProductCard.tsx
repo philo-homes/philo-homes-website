@@ -7,14 +7,19 @@ import { Product, productImage, productPrice } from '@/lib/medusa'
 import { formatPrice } from '@/lib/format'
 import { useWishlist } from '@/context/WishlistContext'
 import { useCart } from '@/context/CartContext'
+import { discountPercent, originalPrice as originalPriceOf } from '@/lib/catalog'
 
-export default function ProductCard({ product, badge }: { product: Product; badge?: string }) {
+// `original` overrides the catalog rule (used by the deals shelf, which
+// assigns stable demo discounts the same way the app does).
+export default function ProductCard({ product, badge, original }: { product: Product; badge?: string; original?: number }) {
   const { has, toggle } = useWishlist()
   const { add, busy } = useCart()
   const router = useRouter()
   const price = productPrice(product)
   const image = productImage(product)
   const liked = has(product.id)
+  const orig = original ?? originalPriceOf(product)
+  const pct = discountPercent(price, orig)
 
   const onHeart = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -31,7 +36,11 @@ export default function ProductCard({ product, badge }: { product: Product; badg
   return (
     <Link href={`/shop/${product.handle}`} className="group block">
       <div className="relative aspect-square bg-[#F5F4F0] overflow-hidden">
-        {badge && <span className="absolute top-2 left-2 z-10 text-[10px] uppercase tracking-wider bg-white/90 px-2 py-0.5">{badge}</span>}
+        {(badge || pct > 0) && (
+          <span className={`absolute top-2 left-2 z-10 text-[10px] uppercase tracking-wider px-2 py-0.5 ${pct > 0 ? 'bg-[#D1903E] text-white' : 'bg-white/90'}`}>
+            {pct > 0 ? `-${Math.round(pct * 100)}%` : badge}
+          </span>
+        )}
         <button onClick={onHeart} aria-label="Favorite" className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center hover:scale-105">
           <Heart size={16} className={liked ? 'fill-[#D1903E] text-[#D1903E]' : 'text-[#10182B]'} />
         </button>
@@ -48,7 +57,10 @@ export default function ProductCard({ product, badge }: { product: Product; badg
       <div className="mt-2 flex items-start justify-between gap-2">
         <div>
           <p className="text-sm leading-snug">{product.title}</p>
-          <p className="text-sm text-[#4B4B4B]">{formatPrice(price)}</p>
+          <p className="text-sm text-[#4B4B4B]">
+            {formatPrice(price)}
+            {orig && pct > 0 && <span className="ml-2 line-through text-[#8E8E8E] text-xs">{formatPrice(orig)}</span>}
+          </p>
         </div>
       </div>
     </Link>

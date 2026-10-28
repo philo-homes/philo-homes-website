@@ -9,6 +9,7 @@ import { useCart } from '@/context/CartContext'
 
 const NAV = [
   { name: 'Shop', href: '/shop' },
+  { name: 'Deals', href: '/deals' },
   { name: 'My Designs', href: '/designs' },
   { name: 'Inspiration', href: '/case-study' },
   { name: 'About Us', href: '/about' },

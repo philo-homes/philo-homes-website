@@ -93,6 +93,8 @@ export type Product = {
   categories?: { id: string; name: string; handle: string }[]
   tags?: { id: string; value: string }[]
   metadata?: Record<string, any> | null
+  material?: string | null
+  options?: { id: string; title: string; values?: { id: string; value: string }[] }[]
   variants: {
     id: string
     title: string
@@ -110,7 +112,7 @@ export function productImage(p: Product): string {
   return p.images?.[0]?.url || p.thumbnail || ''
 }
 
-const PRODUCT_FIELDS = '*variants.calculated_price,+variants.sku,*images,*collection,*categories,*tags,+metadata'
+const PRODUCT_FIELDS = '*variants.calculated_price,+variants.sku,*images,*collection,*categories,*tags,+metadata,+material,*options,*options.values'
 
 export async function listProducts(params: { q?: string; limit?: number; collection_id?: string } = {}) {
   const sp = new URLSearchParams({
@@ -246,6 +248,69 @@ export const requestPhoneCode = (phone: string) =>
   )
 export const verifyPhoneCode = (phone: string, code: string) =>
   storeFetch<PhoneStatus>('/store/customers/me/phone/verify', { method: 'POST', body: { phone, code } })
+
+// Submit/update a rating for a purchased product (backend verifies the purchase).
+export async function submitReview(input: { product_id: string; rating: number; content?: string }) {
+  return storeFetch('/store/reviews', { method: 'POST', body: input })
+}
+
+// ---- Addresses (Medusa v2 customer addresses, same as the app) ---------------
+
+export type SavedAddress = {
+  id: string
+  first_name?: string | null
+  last_name?: string | null
+  address_1: string
+  address_2?: string | null
+  city: string
+  province?: string | null
+  postal_code: string
+  country_code: string
+  phone?: string | null
+  address_name?: string | null
+  is_default_shipping?: boolean
+}
+export async function listAddresses(): Promise<SavedAddress[]> {
+  const data = await storeFetch<{ addresses: SavedAddress[] }>('/store/customers/me/addresses')
+  return data.addresses ?? []
+}
+export async function createAddress(body: Omit<SavedAddress, 'id'>) {
+  return storeFetch<{ customer: Customer }>('/store/customers/me/addresses', { method: 'POST', body })
+}
+export async function updateAddress(id: string, body: Partial<Omit<SavedAddress, 'id'>>) {
+  return storeFetch<{ customer: Customer }>(`/store/customers/me/addresses/${id}`, { method: 'POST', body })
+}
+export async function deleteAddress(id: string) {
+  return storeFetch(`/store/customers/me/addresses/${id}`, { method: 'DELETE' })
+}
+
+// ---- Account security (custom backend routes, same as the app) ---------------
+
+export async function changePassword(current_password: string, new_password: string) {
+  return storeFetch('/store/customers/me/change-password', { method: 'POST', body: { current_password, new_password } })
+}
+export async function deleteAccount() {
+  return storeFetch('/store/customers/me/delete-account', { method: 'POST' })
+}
+// Sends the reset email (SES on the backend). Always resolves — the backend
+// does not reveal whether the email exists.
+export async function requestPasswordReset(email: string) {
+  try {
+    await storeFetch('/auth/customer/emailpass/reset-password', { method: 'POST', body: { identifier: email }, auth: false })
+  } catch {
+    // swallow — see above
+  }
+}
+
+// ---- New-customer offer (backend customer-identity module) --------------------
+export type NewUserEligibility = { eligible: true } | { eligible: false; reason: string }
+export async function getNewUserEligibility(): Promise<NewUserEligibility | null> {
+  try {
+    return await storeFetch<NewUserEligibility>('/store/promo/new-user')
+  } catch {
+    return null
+  }
+}
 
 // ---- Orders ---------------------------------------------------------------------
 

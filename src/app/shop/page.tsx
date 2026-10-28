@@ -3,71 +3,114 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { SlidersHorizontal, X } from 'lucide-react'
 import Shell from '@/components/Shell'
 import ProductCard from '@/components/ProductCard'
-import { listCollections, listProducts, Product } from '@/lib/medusa'
+import { Button } from '@/components/Section'
+import { listProducts, Product } from '@/lib/medusa'
+import {
+  applyFilters, COLOR_FILTERS, EMPTY_FILTERS, FilterState, MATERIAL_FILTERS, PRICE_BUCKETS, productCategory, SORT_OPTIONS, STYLE_FILTERS,
+} from '@/lib/catalog'
+
+function Chip({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`px-3 py-1.5 text-xs border transition-colors ${selected ? 'bg-[#10182B] text-white border-[#10182B]' : 'border-[#e1e1e1] hover:border-[#10182B]'}`}>
+      {label}
+    </button>
+  )
+}
 
 function ShopInner() {
   const params = useSearchParams()
   const q = params.get('q') ?? ''
   const [products, setProducts] = useState<Product[]>([])
-  const [collections, setCollections] = useState<{ id: string; title: string }[]>([])
-  const [collection, setCollection] = useState<string>('')
-  const [sort, setSort] = useState<'featured' | 'price-asc' | 'price-desc'>('featured')
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
+  const [panel, setPanel] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    listCollections().then(setCollections)
-  }, [])
-
-  useEffect(() => {
     setLoading(true)
-    listProducts({ q: q || undefined, collection_id: collection || undefined })
-      .then(setProducts)
-      .catch(() => setProducts([]))
-      .finally(() => setLoading(false))
-  }, [q, collection])
+    listProducts({ q: q || undefined }).then(setProducts).catch(() => setProducts([])).finally(() => setLoading(false))
+  }, [q])
 
-  const sorted = useMemo(() => {
-    const price = (p: Product) => p.variants?.[0]?.calculated_price?.calculated_amount ?? 0
-    if (sort === 'price-asc') return [...products].sort((a, b) => price(a) - price(b))
-    if (sort === 'price-desc') return [...products].sort((a, b) => price(b) - price(a))
-    return products
-  }, [products, sort])
+  // Only the categories present in the current result set (same as the app).
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>()
+    products.forEach((p) => { const c = productCategory(p); if (c) set.add(c) })
+    return Array.from(set).sort()
+  }, [products])
+
+  const results = useMemo(() => applyFilters(products, filters), [products, filters])
+  const toggle = (key: 'materials' | 'colors' | 'categories' | 'styles', value: string) =>
+    setFilters((f) => ({ ...f, [key]: f[key].includes(value) ? f[key].filter((v) => v !== value) : [...f[key], value] }))
+
+  const activeChips: { label: string; clear: () => void }[] = []
+  if (filters.priceRange) activeChips.push({ label: PRICE_BUCKETS.find((b) => b.id === filters.priceRange)!.label, clear: () => setFilters((f) => ({ ...f, priceRange: '' })) })
+  for (const key of ['categories', 'materials', 'colors', 'styles'] as const) for (const v of filters[key]) activeChips.push({ label: v, clear: () => toggle(key, v) })
+  const activeCount = activeChips.length + (filters.sort !== 'best-match' ? 1 : 0)
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl" style={{ fontFamily: "'Henry Trial', serif" }}>{q ? `Results for “${q}”` : 'Shop'}</h1>
-          <p className="text-sm text-[#4B4B4B] mt-1">{loading ? 'Loading…' : `${sorted.length} products`}</p>
+          <p className="text-sm text-[#4B4B4B] mt-1">{loading ? 'Loading…' : `${results.length} of ${products.length} products`}</p>
         </div>
         <div className="flex gap-3 text-sm">
-          {collections.length > 0 && (
-            <select value={collection} onChange={(e) => setCollection(e.target.value)} className="border border-[#e1e1e1] px-3 py-2 bg-white">
-              <option value="">All collections</option>
-              {collections.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-            </select>
-          )}
-          <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="border border-[#e1e1e1] px-3 py-2 bg-white">
-            <option value="featured">Featured</option>
-            <option value="price-asc">Price: low to high</option>
-            <option value="price-desc">Price: high to low</option>
+          <select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as any }))} className="border border-[#e1e1e1] px-3 py-2 bg-white">
+            {SORT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
+          <Button variant="outline" onClick={() => setPanel(true)}><SlidersHorizontal size={16} className="mr-2" /> Filters{activeCount ? ` (${activeCount})` : ''}</Button>
         </div>
       </div>
-      {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="aspect-square bg-[#F5F4F0] animate-pulse" />)}
+
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {activeChips.map((c) => (
+            <button key={c.label} onClick={c.clear} className="flex items-center gap-1 px-3 py-1 text-xs bg-[#F5F4F0] hover:bg-[#EEEEEE]">{c.label} <X size={12} /></button>
+          ))}
+          <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-xs underline text-[#4B4B4B]">Clear all</button>
         </div>
-      ) : sorted.length === 0 ? (
-        <p className="text-sm text-[#4B4B4B]">Nothing matched. Try another search.</p>
+      )}
+
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="aspect-square bg-[#F5F4F0] animate-pulse" />)}</div>
+      ) : results.length === 0 ? (
+        <p className="text-sm text-[#4B4B4B]">Nothing matched. Try another search or clear the filters.</p>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {sorted.map((p) => <ProductCard key={p.id} product={p} />)}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">{results.map((p) => <ProductCard key={p.id} product={p} />)}</div>
+      )}
+
+      {panel && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex justify-end" onClick={() => setPanel(false)}>
+          <div className="bg-white w-full max-w-sm h-full overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg" style={{ fontFamily: "'Henry Trial', serif" }}>Filters</h2>
+              <button onClick={() => setPanel(false)} aria-label="Close"><X size={20} /></button>
+            </div>
+            <Group title="Sort by">{SORT_OPTIONS.map((o) => <Chip key={o.id} label={o.label} selected={filters.sort === o.id} onClick={() => setFilters((f) => ({ ...f, sort: o.id }))} />)}</Group>
+            <Group title="Price">{PRICE_BUCKETS.map((b) => <Chip key={b.id} label={b.label} selected={filters.priceRange === b.id} onClick={() => setFilters((f) => ({ ...f, priceRange: f.priceRange === b.id ? '' : b.id }))} />)}</Group>
+            {availableCategories.length > 0 && <Group title="Category">{availableCategories.map((c) => <Chip key={c} label={c} selected={filters.categories.includes(c)} onClick={() => toggle('categories', c)} />)}</Group>}
+            <Group title="Material">{MATERIAL_FILTERS.map((m) => <Chip key={m} label={m} selected={filters.materials.includes(m)} onClick={() => toggle('materials', m)} />)}</Group>
+            <Group title="Color">{COLOR_FILTERS.map((c) => <Chip key={c} label={c} selected={filters.colors.includes(c)} onClick={() => toggle('colors', c)} />)}</Group>
+            <Group title="Style">{STYLE_FILTERS.map((s) => <Chip key={s} label={s} selected={filters.styles.includes(s)} onClick={() => toggle('styles', s)} />)}</Group>
+            <div className="flex gap-3 mt-8">
+              <Button variant="outline" onClick={() => setFilters(EMPTY_FILTERS)} className="flex-1">Reset</Button>
+              <Button onClick={() => setPanel(false)} className="flex-1">Show {results.length} results</Button>
+            </div>
+          </div>
         </div>
       )}
     </>
+  )
+}
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6">
+      <p className="text-xs uppercase tracking-wider text-[#8E8E8E] mb-2">{title}</p>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
   )
 }
 
