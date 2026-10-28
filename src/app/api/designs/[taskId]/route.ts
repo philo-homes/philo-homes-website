@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { customerFromToken, deleteTask, fetchFurnitureData, getResult, listUserTasks, readStatus } from '@/lib/designs'
+import { customerFromToken, deleteTask, fetchFurnitureData, listUserTasks, resolveStatus } from '@/lib/designs'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,11 +21,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ taskId: str
   const auth = await authorize(req, taskId)
   if ('error' in auth) return auth.error
 
-  const status = (await readStatus(taskId)) ?? 'UNKNOWN'
-  if (status !== 'COMPLETE') return NextResponse.json({ task_id: taskId, status, result: null, furniture: null })
+  const { status, result } = await resolveStatus(taskId)
+  if (status !== 'COMPLETE' || !result) return NextResponse.json({ task_id: taskId, status, result: null, furniture: null })
 
-  const result = await getResult(taskId)
-  const furniture = result?.artifacts?.furniture_data ? await fetchFurnitureData(result.artifacts.furniture_data) : null
+  const furniture = result.artifacts?.furniture_data ? await fetchFurnitureData(result.artifacts.furniture_data) : null
   return NextResponse.json({ task_id: taskId, status, result, furniture })
 }
 

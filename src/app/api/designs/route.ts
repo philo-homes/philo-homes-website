@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
-import { customerFromToken, getResult, listUserTasks, readStatus } from '@/lib/designs'
+import { customerFromToken, listUserTasks, resolveStatus } from '@/lib/designs'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: e?.message ?? 'Could not load designs.' }, { status: 502 })
   }
   tasks.sort((a, b) => (b.timestamp ?? '').localeCompare(a.timestamp ?? ''))
+  const startedAt = Date.now()
 
   let names: Record<string, string> = {}
   try {
@@ -30,16 +31,10 @@ export async function GET(req: NextRequest) {
 
   const designs = await Promise.all(
     tasks.slice(0, 30).map(async (t) => {
-      const status = (await readStatus(t.task_id)) ?? 'UNKNOWN'
-      let preview: string | null = null
-      let room_type: string | undefined
-      let design_style: string | undefined
-      if (status === 'COMPLETE') {
-        const result = await getResult(t.task_id).catch(() => null)
-        preview = result?.artifacts?.images?.[0] ?? null
-        room_type = result?.room_type
-        design_style = result?.design_style
-      }
+      const { status, result } = await resolveStatus(t.task_id)
+      const preview = status === 'COMPLETE' ? result?.artifacts?.images?.[0] ?? null : null
+      const room_type = result?.room_type
+      const design_style = result?.design_style
       return {
         task_id: t.task_id,
         created_at: t.timestamp,
@@ -50,6 +45,9 @@ export async function GET(req: NextRequest) {
         design_style,
       }
     }),
+  )
+  console.log(
+    `[designs] customer=${customer.id} tasks=${tasks.length} statuses=${designs.map((d) => `${d.task_id}:${d.status}`).join(',') || '-'} in ${Date.now() - startedAt}ms`,
   )
   return NextResponse.json({ designs: designs.filter((d) => d.status !== 'DELETED') })
 }

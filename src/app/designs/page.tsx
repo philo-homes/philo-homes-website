@@ -43,7 +43,10 @@ export default function DesignsPage() {
       ) : error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : designs === null ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="aspect-[4/3] bg-[#F5F4F0] animate-pulse" />)}</div>
+        <div>
+          <p className="text-sm text-[#4B4B4B] mb-4">Loading your designs… the first load can take up to 30 seconds while the design service wakes up.</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="aspect-[4/3] bg-[#F5F4F0] animate-pulse" />)}</div>
+        </div>
       ) : designs.length === 0 ? (
         <div className="bg-[#FCF9F2] p-8 text-sm text-[#4B4B4B]">
           <p>No designs yet. Scanning a room is the one thing that needs your phone:</p>
