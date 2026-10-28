@@ -1,20 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import Providers from "@/context/Providers";
 
 export const metadata: Metadata = {
   title: "Philo Homes",
-  description: "Luxury real estate and AI-powered room design",
+  description: "AI-designed rooms you can shop — scan with the app, refine and buy on the web.",
   icons: {
     icon: "/logo/logo icon.svg",
     shortcut: "/logo/logo icon.svg",
@@ -29,10 +19,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className="antialiased bg-[#fefdfb] text-[#10182B]">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

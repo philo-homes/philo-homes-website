@@ -1,146 +1,63 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowRight, Instagram } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 
+const COLUMNS = [
+  { title: 'Company', links: [{ name: 'About Us', href: '/about' }, { name: 'Contact Us', href: '/book-demo' }, { name: 'Community', href: '/community' }, { name: 'Inspiration', href: '/case-study' }] },
+  { title: 'Shop', links: [{ name: 'Shop', href: '/shop' }, { name: 'My Designs', href: '/designs' }, { name: 'Favorites', href: '/favorites' }, { name: 'Privacy Policy', href: '/privacy' }] },
+]
+
+// Figma footer: navy band, brand + quote, link columns, newsletter.
 export default function Footer() {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
 
-  const footerLinks = [
-    { name: 'About Us', href: '/about' },
-    { name: 'Case Study', href: '/case-study' },
-    { name: 'Privacy Policy', href: '/privacy' },
-  ]
-
-  const handleNewsletterSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email) return
-
     setStatus('loading')
     try {
-      const response = await fetch('/api/newsletter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-
-      if (response.ok) {
-        setStatus('success')
-        setEmail('')
-      } else {
-        setStatus('error')
-      }
+      const res = await fetch('/api/newsletter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+      setStatus(res.ok ? 'success' : 'error')
+      if (res.ok) setEmail('')
     } catch {
       setStatus('error')
     }
   }
 
   return (
-    <footer style={{ backgroundColor: '#10182B' }} className="text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        {/* Main Footer Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 mb-16">
-          {/* Logo and Newsletter */}
-          <div className="lg:col-span-5">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-            >
-              <div className="mb-8">
-                <Image
-                  src="/logo/logo-gold.png"
-                  alt="Philo Homes"
-                  width={120}
-                  height={40}
-                  className="h-10 w-auto"
-                />
-              </div>
-
-              <p className="text-white/80 mb-6 font-light leading-relaxed text-sm">
-                Sign up for updates on new features and design templates.
-              </p>
-
-              <form onSubmit={handleNewsletterSubmit} className="flex">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="E-mail"
-                  className="flex-1 bg-transparent border border-white/30 px-4 py-2 text-white placeholder-white/60 focus:outline-none focus:border-white/60 transition-colors text-sm"
-                  disabled={status === 'loading'}
-                />
-                <button
-                  type="submit"
-                  className="px-6 py-2 border border-white/30 border-l-0 hover:bg-white/10 transition-colors disabled:opacity-50"
-                  disabled={status === 'loading'}
-                >
-                  <ArrowRight size={18} className="text-white" />
-                </button>
-              </form>
-              {status === 'success' && (
-                <p className="text-green-400 text-xs mt-2">Thank you for subscribing!</p>
-              )}
-              {status === 'error' && (
-                <p className="text-red-400 text-xs mt-2">Something went wrong. Please try again.</p>
-              )}
-            </motion.div>
-          </div>
-
-          {/* Footer Links */}
-          <div className="lg:col-span-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-            >
-              <h3 className="font-medium mb-3 text-white text-sm">Explore</h3>
+    <footer className="bg-[#3C4A6B] text-white mt-20">
+      <div className="max-w-[1400px] mx-auto px-5 md:px-10 py-14 grid gap-10 md:grid-cols-12">
+        <div className="md:col-span-4">
+          <div className="text-[#E5C68C] tracking-[0.25em] text-sm" style={{ fontFamily: "'Henry Trial', serif" }}>PHILO<br />HOMES</div>
+          <p className="mt-4 text-sm text-white/80 max-w-xs">&ldquo;Curating a world of inspiration, we&apos;ll help you design a home where you feel at your best and thrive.&rdquo;</p>
+        </div>
+        <div className="md:col-span-4 grid grid-cols-2 gap-6 text-sm">
+          {COLUMNS.map((c) => (
+            <div key={c.title}>
               <ul className="space-y-2">
-                {footerLinks.map((link) => (
-                  <li key={link.name}>
-                    <Link
-                      href={link.href}
-                      className="text-white/70 hover:text-white transition-colors text-xs"
-                    >
-                      {link.name}
-                    </Link>
-                  </li>
+                {c.links.map((l) => (
+                  <li key={l.name}><Link href={l.href} className="text-white/80 hover:text-white">{l.name}</Link></li>
                 ))}
               </ul>
-
-            </motion.div>
-          </div>
+            </div>
+          ))}
         </div>
-
-        {/* Bottom Section */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.5 }}
-          className="flex flex-col lg:flex-row justify-between items-center pt-8 border-t border-white/20"
-        >
-          {/* Social Icons */}
-          <div className="flex space-x-4 mb-6 lg:mb-0">
-            <a
-              href="https://instagram.com/philo.homes"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors"
-            >
-              <Instagram size={18} className="text-white" />
-            </a>
-          </div>
-
-          {/* Copyright */}
-          <p className="text-white/50 text-xs">
-            &copy; {new Date().getFullYear()} Philo Homes, Maven Design LLC. All rights reserved.
-          </p>
-        </motion.div>
+        <div className="md:col-span-4">
+          <p className="text-sm">Sign up to hear about our exclusive offers, product launches and updates.</p>
+          <form onSubmit={submit} className="mt-4">
+            <label className="block text-xs text-white/70 mb-1">Email</label>
+            <div className="flex">
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@email.com" className="flex-1 bg-white text-[#10182B] px-3 py-2 text-sm focus:outline-none" />
+              <button type="submit" disabled={status === 'loading'} className="bg-[#D1903E] hover:bg-[#C37933] px-4 py-2 text-sm">Subscribe</button>
+            </div>
+            {status === 'success' && <p className="text-xs mt-2 text-green-300">Thank you for subscribing!</p>}
+            {status === 'error' && <p className="text-xs mt-2 text-red-300">Something went wrong. Please try again.</p>}
+          </form>
+        </div>
       </div>
+      <div className="border-t border-white/10 py-4 text-center text-xs text-white/60">© {new Date().getFullYear()} Philo Homes, Maven Design LLC. All rights reserved.</div>
     </footer>
   )
 }
