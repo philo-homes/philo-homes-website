@@ -3,12 +3,15 @@
 
 import {
   CART_STORAGE_KEY,
-  MEDUSA_PUBLISHABLE_KEY,
   MEDUSA_REGION_ID,
-  MEDUSA_URL,
   STRIPE_PROVIDER_ID,
   TOKEN_STORAGE_KEY,
 } from './config'
+
+// All browser calls go through our same-origin proxy (src/app/api/medusa),
+// which adds the publishable key and forwards to the real backend — the
+// backend's CORS allow-list doesn't include this site.
+const API_BASE = '/api/medusa'
 
 // ---------------------------------------------------------------------------
 // Thin client for the Medusa store API. Mirrors the mobile app's services so
@@ -63,11 +66,10 @@ export async function storeFetch<T = any>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-publishable-api-key': MEDUSA_PUBLISHABLE_KEY,
   }
   const token = init.token ?? (init.auth === false ? null : getToken())
   if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(`${MEDUSA_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: init.method ?? 'GET',
     headers,
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
