@@ -46,7 +46,7 @@ export default function CartPage() {
           <aside className="md:col-span-4 bg-[#FCF9F2] p-6 h-fit">
             <h2 className="text-lg mb-4" style={{ fontFamily: "'Henry Trial', serif" }}>Cart Summary</h2>
             <dl className="text-sm space-y-2">
-              <div className="flex justify-between"><dt>Subtotal</dt><dd>{formatPrice(cart?.subtotal ?? null)}</dd></div>
+              <div className="flex justify-between"><dt>Items</dt><dd>{formatPrice(cart?.item_subtotal ?? items.reduce((s, i) => s + i.unit_price * i.quantity, 0))}</dd></div>
               <div className="flex justify-between"><dt>Shipping</dt><dd>{cart?.shipping_total ? formatPrice(cart.shipping_total) : 'Calculated at checkout'}</dd></div>
               <div className="flex justify-between"><dt>Estimated tax</dt><dd>{formatPrice(cart?.tax_total ?? 0)}</dd></div>
               <div className="flex justify-between border-t border-[#e8e4dc] pt-2 font-medium"><dt>Estimated total</dt><dd>{formatPrice(cart?.total ?? null)}</dd></div>

@@ -337,6 +337,7 @@ export type Cart = {
     product_title?: string
   }[]
   subtotal?: number
+  item_subtotal?: number
   total?: number
   shipping_total?: number
   tax_total?: number

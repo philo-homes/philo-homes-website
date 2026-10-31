@@ -197,7 +197,7 @@ export default function CheckoutPage() {
             ))}
           </ul>
           <dl className="text-sm space-y-1 border-t border-[#e8e4dc] pt-3">
-            <div className="flex justify-between"><dt>Subtotal</dt><dd>{formatPrice(cart?.subtotal ?? null)}</dd></div>
+            <div className="flex justify-between"><dt>Items</dt><dd>{formatPrice(cart?.item_subtotal ?? null)}</dd></div>
             <div className="flex justify-between"><dt>Shipping</dt><dd>{formatPrice(cart?.shipping_total ?? 0)}</dd></div>
             <div className="flex justify-between"><dt>Tax</dt><dd>{formatPrice(cart?.tax_total ?? 0)}</dd></div>
             <div className="flex justify-between font-medium pt-1"><dt>Total</dt><dd>{formatPrice(cart?.total ?? null)}</dd></div>
