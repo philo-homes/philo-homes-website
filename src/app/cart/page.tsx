@@ -6,6 +6,7 @@ import { Button } from '@/components/Section'
 import { useCart } from '@/context/CartContext'
 import { formatPrice } from '@/lib/format'
 import { useRouter } from 'next/navigation'
+import Img from '@/components/Img'
 
 export default function CartPage() {
   const { cart, update, remove, busy, count } = useCart()
@@ -22,11 +23,8 @@ export default function CartPage() {
           <ul className="md:col-span-8 divide-y divide-[#e8e4dc]">
             {items.map((li) => (
               <li key={li.id} className="py-4 flex gap-4">
-                <div className="w-24 h-24 bg-[#F5F4F0] shrink-0">
-                  {li.thumbnail && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={li.thumbnail} alt="" className="w-full h-full object-cover" />
-                  )}
+                <div className="w-24 h-24 bg-[#F5F4F0] shrink-0 relative overflow-hidden">
+                  {li.thumbnail && <Img src={li.thumbnail} sizes="96px" />}
                 </div>
                 <div className="flex-1">
                   <p className="text-sm">{li.product_title ?? li.title}</p>

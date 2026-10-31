@@ -5,6 +5,7 @@ import Shell from '@/components/Shell'
 import { useAuth } from '@/context/AuthContext'
 import { useWishlist } from '@/context/WishlistContext'
 import { formatPrice } from '@/lib/format'
+import Img from '@/components/Img'
 
 export default function FavoritesPage() {
   const { customer, loading } = useAuth()
@@ -21,11 +22,8 @@ export default function FavoritesPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           {items.map((i) => (
             <div key={i.id}>
-              <div className="aspect-square bg-[#F5F4F0]">
-                {i.image && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={i.image} alt={i.name} className="w-full h-full object-cover" />
-                )}
+              <div className="aspect-square bg-[#F5F4F0] relative overflow-hidden">
+                {i.image && <Img src={i.image} alt={i.name} />}
               </div>
               <p className="text-sm mt-2">{i.name}</p>
               <p className="text-sm text-[#4B4B4B]">{formatPrice(i.price)}</p>

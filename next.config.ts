@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'storage.googleapis.com',
       },
+      // Product photos (catalog CDN) — resized to thumbnails by next/image.
+      {
+        protocol: 'https',
+        hostname: '**.cloudfront.net',
+      },
     ],
   },
 };

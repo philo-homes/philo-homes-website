@@ -8,6 +8,7 @@ import { formatPrice } from '@/lib/format'
 import { useWishlist } from '@/context/WishlistContext'
 import { useCart } from '@/context/CartContext'
 import { discountPercent, originalPrice as originalPriceOf } from '@/lib/catalog'
+import Img from './Img'
 
 // `original` overrides the catalog rule (used by the deals shelf, which
 // assigns stable demo discounts the same way the app does).
@@ -45,8 +46,7 @@ export default function ProductCard({ product, badge, original }: { product: Pro
           <Heart size={16} className={liked ? 'fill-[#D1903E] text-[#D1903E]' : 'text-[#10182B]'} />
         </button>
         {image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={image} alt={product.title} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500" />
+          <Img src={image} alt={product.title} className="group-hover:scale-[1.03] transition-transform duration-500" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xs text-[#8E8E8E]">No image</div>
         )}
