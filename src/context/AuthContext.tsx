@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { Customer, getMe, getToken, login as apiLogin, register as apiRegister, setToken } from '@/lib/medusa'
+import { Customer, getMe, getToken, login as apiLogin, register as apiRegister, setStoredCartId, setToken } from '@/lib/medusa'
 
 type AuthState = {
   customer: Customer | null
@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(() => {
     setToken(null)
+    setStoredCartId(null) // the cart belongs to the account, not this browser
     setTok(null)
     setCustomer(null)
   }, [])

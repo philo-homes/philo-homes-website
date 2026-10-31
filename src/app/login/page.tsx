@@ -11,7 +11,9 @@ import { requestPasswordReset } from '@/lib/medusa'
 function LoginInner() {
   const { signIn, signUp } = useAuth()
   const router = useRouter()
-  const next = useSearchParams().get('next') || '/designs'
+  // Only ever redirect within this site (never to an external URL).
+  const rawNext = useSearchParams().get('next') || '/designs'
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/designs'
   const [mode, setMode] = useState<'in' | 'up'>('in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

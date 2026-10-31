@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { addLineItem, Cart, ensureCart, removeLineItem, updateLineItem } from '@/lib/medusa'
+import { addLineItem, Cart, ensureCart, getStoredCartId, removeLineItem, updateLineItem } from '@/lib/medusa'
 import { useAuth } from './AuthContext'
 
 type CartState = {
@@ -23,6 +23,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
+    // A signed-out visitor with no cart yet gets one lazily on first add,
+    // not just for opening the site.
+    if (!customer && !getStoredCartId()) {
+      setCart(null)
+      return
+    }
     try {
       setCart(await ensureCart(customer))
     } catch {
