@@ -12,7 +12,7 @@ import { useCart } from '@/context/CartContext'
 import type { FurnitureData, TaskResult } from '@/lib/designs'
 import { catalog, DesignEdit, Product, productImage, productPrice, readDesignEdits, readDesignNames, resolveSku, writeDesignEdit, writeDesignName } from '@/lib/medusa'
 import { formatPrice } from '@/lib/format'
-import { toScene, type PlacedItem } from '@/components/DesignViewer'
+import { toScene, type PlacedItem, type RoomFrame } from '@/components/DesignViewer'
 
 // three.js only runs in the browser
 const DesignViewer = dynamic(() => import('@/components/DesignViewer'), { ssr: false, loading: () => <div className="w-full aspect-[16/10] bg-[#1b1f2a]" /> })
@@ -33,6 +33,9 @@ export default function DesignDetailPage() {
   const [selected, setSelected] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [renaming, setRenaming] = useState(false)
+  // Where the room actually sits in the scene (rooms are not at the origin):
+  // new furniture is dropped on its floor near the center.
+  const [roomFrame, setRoomFrame] = useState<RoomFrame>({ center: [0, 0, 0], floorY: 0 })
 
   useEffect(() => {
     if (!token) return
@@ -64,11 +67,16 @@ export default function DesignDetailPage() {
     if (picker && all.length === 0) catalog().then(setAll)
   }, [picker, all.length])
 
+  const instances = useMemo(
+    () => (data?.furniture?.furnitureUrls ?? []).map((item, i) => ({ item, key: `${item.id}#${i}` })),
+    [data],
+  )
+
   const sceneItems: PlacedItem[] = useMemo(() => {
-    const base = (data?.furniture?.furnitureUrls ?? []).filter((f) => !edit.removed.includes(f.id)).map(toScene)
+    const base = instances.filter(({ key }) => !edit.removed.includes(key)).map(({ item, key }) => ({ ...toScene(item), id: key }))
     const added: PlacedItem[] = edit.added.map((a) => ({ id: a.id, url: a.url ?? '', position: a.position, rotation: [0, 0, 0], scale: [1, 1, 1], label: a.name }))
     return [...base, ...added].map((it) => ({ ...it, highlight: it.id === selected }))
-  }, [data, edit, selected])
+  }, [instances, edit, selected])
 
   const persist = async (next: DesignEdit) => {
     setEdit(next)
@@ -82,9 +90,10 @@ export default function DesignDetailPage() {
   const addPiece = (p: Product) => {
     const glb = typeof p.metadata?.model_3d_url === 'string' ? p.metadata.model_3d_url : typeof p.metadata?.glb_url === 'string' ? p.metadata.glb_url : undefined
     const n = edit.added.length
+    const [cx, , cz] = roomFrame.center
     persist({
       ...edit,
-      added: [...edit.added, { id: `web-${Date.now()}`, productId: p.id, name: p.title, image: productImage(p), url: glb, position: [0.6 * (n % 4) - 1, 0, 0.6 * Math.floor(n / 4) + 1] }],
+      added: [...edit.added, { id: `web-${Date.now()}`, productId: p.id, name: p.title, image: productImage(p), url: glb, position: [cx + 0.7 * (n % 3) - 0.7, roomFrame.floorY, cz + 0.7 * Math.floor(n / 3)] }],
     })
     setPicker(false)
   }
@@ -101,7 +110,7 @@ export default function DesignDetailPage() {
   }
 
   const addAllToCart = async () => {
-    const ids = (data?.furniture?.furnitureUrls ?? []).filter((f) => !edit.removed.includes(f.id)).map((f) => products[f.id]?.variants?.[0]?.id).filter(Boolean) as string[]
+    const ids = instances.filter(({ key }) => !edit.removed.includes(key)).map(({ item }) => products[item.id]?.variants?.[0]?.id).filter(Boolean) as string[]
     const addedIds = edit.added.map((a) => all.find((p) => p.id === a.productId)?.variants?.[0]?.id).filter(Boolean) as string[]
     for (const v of [...ids, ...addedIds]) await add(v, 1)
   }
@@ -114,10 +123,9 @@ export default function DesignDetailPage() {
     return <Shell><p className="text-sm">This design is still {data.status.toLowerCase().replace(/_/g, ' ')}. Check back in a few minutes.</p></Shell>
   }
 
-  const { result, furniture } = data
+  const { result } = data
   const artifacts = result.artifacts
   if (!artifacts) return null
-  const pieces = furniture?.furnitureUrls ?? []
   const dims = result.room_length && result.room_width ? `${(result.room_length / 100).toFixed(1)} × ${(result.room_width / 100).toFixed(1)} m` : null
 
   return (
@@ -136,7 +144,7 @@ export default function DesignDetailPage() {
             </h1>
           )}
           <p className="text-sm text-[#4B4B4B] mt-1">
-            {result.room_type} · {result.design_style}{dims ? ` · ${dims}` : ''} · {pieces.length - edit.removed.length + edit.added.length} pieces
+            {result.room_type} · {result.design_style}{dims ? ` · ${dims}` : ''} · {instances.length - edit.removed.length + edit.added.length} pieces
           </p>
         </div>
         <div className="flex gap-3">
@@ -147,7 +155,7 @@ export default function DesignDetailPage() {
 
       <div className="grid lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8">
-          <DesignViewer roomUrl={artifacts.room_glb} items={sceneItems} />
+          <DesignViewer roomUrl={artifacts.room_glb} items={sceneItems} onRoomFrame={setRoomFrame} />
           {artifacts.images.length > 0 && (
             <div className="grid grid-cols-3 gap-3 mt-4">
               {artifacts.images.slice(0, 3).map((src, i) => (
@@ -160,11 +168,11 @@ export default function DesignDetailPage() {
         <aside className="lg:col-span-4">
           <h2 className="text-lg mb-3" style={{ fontFamily: "'Henry Trial', serif" }}>Furniture in this design</h2>
           <ul className="divide-y divide-[#e8e4dc]">
-            {pieces.map((f) => {
+            {instances.map(({ item: f, key }) => {
               const p = products[f.id]
-              const removed = edit.removed.includes(f.id)
+              const removed = edit.removed.includes(key)
               return (
-                <li key={f.id} className={`py-3 flex gap-3 ${removed ? 'opacity-50' : ''}`} onMouseEnter={() => setSelected(f.id)} onMouseLeave={() => setSelected(null)}>
+                <li key={key} className={`py-3 flex gap-3 ${removed ? 'opacity-50' : ''}`} onMouseEnter={() => setSelected(key)} onMouseLeave={() => setSelected(null)}>
                   <div className="w-16 h-16 bg-[#F5F4F0] shrink-0">
                     {(p ? productImage(p) : f.photo_url) && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -177,7 +185,7 @@ export default function DesignDetailPage() {
                     <div className="flex gap-3 mt-1 text-xs">
                       {p && <Link href={`/shop/${p.handle}`} className="underline">View</Link>}
                       {p && !removed && <button disabled={busy} onClick={() => p.variants?.[0] && add(p.variants[0].id, 1)} className="underline">Add to cart</button>}
-                      {removed ? <button onClick={() => restorePiece(f.id)} className="underline">Put back</button> : <button onClick={() => removePiece(f.id)} className="text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Remove</button>}
+                      {removed ? <button onClick={() => restorePiece(key)} className="underline">Put back</button> : <button onClick={() => removePiece(key)} className="text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Remove</button>}
                     </div>
                   </div>
                 </li>
