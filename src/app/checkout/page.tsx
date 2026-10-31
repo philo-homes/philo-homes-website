@@ -11,7 +11,7 @@ import { Button, Field } from '@/components/Section'
 import { useAuth } from '@/context/AuthContext'
 import { useCart } from '@/context/CartContext'
 import { STRIPE_PUBLISHABLE_KEY } from '@/lib/config'
-import { addShippingMethod, Address, applyPromoCode, completeCart, getPhoneStatus, initStripeSession, listShippingOptions, updateCartCheckoutInfo } from '@/lib/medusa'
+import { addShippingMethod, Address, applyPromoCode, completeCart, getPhoneStatus, initStripeSession, listAddresses, listShippingOptions, SavedAddress, updateCartCheckoutInfo } from '@/lib/medusa'
 import { formatPrice } from '@/lib/format'
 
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null
@@ -67,12 +67,14 @@ export default function CheckoutPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [phoneOk, setPhoneOk] = useState<boolean | null>(null)
+  const [saved, setSavedAddresses] = useState<SavedAddress[]>([])
 
   useEffect(() => {
     if (customer) {
       setEmail(customer.email)
       setAddr((a) => ({ ...a, first_name: customer.first_name ?? '', last_name: customer.last_name ?? '', phone: customer.phone ?? '' }))
       getPhoneStatus().then((s) => setPhoneOk(s.verified)).catch(() => setPhoneOk(null))
+      listAddresses().then(setSavedAddresses).catch(() => setSavedAddresses([]))
     }
   }, [customer])
 
@@ -144,6 +146,35 @@ export default function CheckoutPage() {
                 </div>
               )}
               <h2 className="text-lg" style={{ fontFamily: "'Henry Trial', serif" }}>Shipping Address</h2>
+              {saved.length > 0 && (
+                <label className="block text-sm">
+                  <span className="block text-xs text-[#4B4B4B] mb-1">Use a saved address</span>
+                  <select
+                    defaultValue=""
+                    onChange={(e) => {
+                      const a = saved.find((x) => x.id === e.target.value)
+                      if (!a) return
+                      setAddr({
+                        first_name: a.first_name ?? addr.first_name,
+                        last_name: a.last_name ?? addr.last_name,
+                        address_1: a.address_1,
+                        address_2: a.address_2 ?? '',
+                        city: a.city,
+                        province: a.province ?? '',
+                        postal_code: a.postal_code,
+                        country_code: a.country_code || 'us',
+                        phone: a.phone ?? addr.phone,
+                      })
+                    }}
+                    className="w-full border border-[#e1e1e1] px-3 py-2 bg-white"
+                  >
+                    <option value="">Choose…</option>
+                    {saved.map((a) => (
+                      <option key={a.id} value={a.id}>{a.first_name} {a.last_name} — {a.address_1}, {a.city}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="First name" required value={addr.first_name} onChange={(e) => setAddr({ ...addr, first_name: e.target.value })} />
                 <Field label="Last name" required value={addr.last_name} onChange={(e) => setAddr({ ...addr, last_name: e.target.value })} />
