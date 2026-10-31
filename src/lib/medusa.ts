@@ -150,7 +150,14 @@ export async function getProductById(id: string): Promise<Product | null> {
 let catalogCache: { at: number; products: Product[] } | null = null
 export async function catalog(): Promise<Product[]> {
   if (catalogCache && Date.now() - catalogCache.at < 5 * 60 * 1000) return catalogCache.products
-  const products = await listProducts({ limit: 100 })
+  // The store API returns at most 100 per page; walk pages (cap 1000).
+  const products: Product[] = []
+  for (let offset = 0; offset < 1000; offset += 100) {
+    const sp = new URLSearchParams({ region_id: MEDUSA_REGION_ID, limit: '100', offset: String(offset), fields: PRODUCT_FIELDS })
+    const data = await storeFetch<{ products: Product[]; count: number }>(`/store/products?${sp.toString()}`, { auth: false })
+    products.push(...(data.products ?? []))
+    if (products.length >= (data.count ?? 0) || (data.products ?? []).length < 100) break
+  }
   catalogCache = { at: Date.now(), products }
   return products
 }
@@ -386,14 +393,28 @@ export async function createCart(): Promise<Cart> {
 // (active_cart_id) wins, so adding on the phone shows up here and vice versa.
 export async function ensureCart(customer: Customer | null): Promise<Cart> {
   const remoteId = customer?.metadata?.[ACTIVE_CART_META_KEY]
+  const localId = getStoredCartId()
   if (typeof remoteId === 'string' && remoteId) {
-    const cart = await getCart(remoteId)
+    let cart = await getCart(remoteId)
     if (cart && !(cart as any).completed_at) {
+      // Signing in with items added as a guest: merge them into the account's
+      // cart instead of silently dropping them.
+      if (localId && localId !== cart.id) {
+        const guest = await getCart(localId)
+        if (guest && !(guest as any).completed_at && !guest.customer_id) {
+          for (const li of guest.items ?? []) {
+            try {
+              cart = await addLineItem(cart.id, li.variant_id, li.quantity)
+            } catch {
+              // item no longer purchasable — skip it
+            }
+          }
+        }
+      }
       setStoredCartId(cart.id)
       return cart
     }
   }
-  const localId = getStoredCartId()
   if (localId) {
     const cart = await getCart(localId)
     if (cart && !(cart as any).completed_at) {

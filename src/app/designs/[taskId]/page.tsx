@@ -5,6 +5,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useParams } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
+import { toast } from '@/components/Toast'
 import Shell from '@/components/Shell'
 import { Button } from '@/components/Section'
 import { useAuth } from '@/context/AuthContext'
@@ -79,11 +80,27 @@ export default function DesignDetailPage() {
   }, [instances, edit, selected])
 
   const persist = async (next: DesignEdit) => {
+    const previous = edit
     setEdit(next)
-    if (customer) {
+    if (!customer) return
+    try {
       await writeDesignEdit(customer, taskId, next)
       await refresh()
+    } catch {
+      setEdit(previous)
+      toast.error('Could not save that change. Please try again.')
     }
+  }
+
+  const deleteDesign = async () => {
+    if (!token || !window.confirm('Delete this design? This removes it from the app too and cannot be undone.')) return
+    const r = await fetch(`/api/designs/${taskId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+    if (!r.ok) {
+      toast.error('Could not delete this design.')
+      return
+    }
+    toast.success('Design deleted')
+    window.location.href = '/designs'
   }
   const removePiece = (id: string) => persist({ ...edit, removed: Array.from(new Set([...edit.removed, id])) })
   const restorePiece = (id: string) => persist({ ...edit, removed: edit.removed.filter((r) => r !== id) })
@@ -103,8 +120,12 @@ export default function DesignDetailPage() {
 
   const saveName = async () => {
     if (customer && name.trim()) {
-      await writeDesignName(customer, taskId, name.trim())
-      await refresh()
+      try {
+        await writeDesignName(customer, taskId, name.trim())
+        await refresh()
+      } catch {
+        toast.error('Could not save the name.')
+      }
     }
     setRenaming(false)
   }
@@ -112,15 +133,21 @@ export default function DesignDetailPage() {
   const addAllToCart = async () => {
     const ids = instances.filter(({ key }) => !edit.removed.includes(key)).map(({ item }) => products[item.id]?.variants?.[0]?.id).filter(Boolean) as string[]
     const addedIds = edit.added.map((a) => all.find((p) => p.id === a.productId)?.variants?.[0]?.id).filter(Boolean) as string[]
-    for (const v of [...ids, ...addedIds]) await add(v, 1)
+    let ok = 0
+    for (const v of [...ids, ...addedIds]) if (await add(v, 1)) ok += 1
+    if (ok > 0) toast.success(`${ok} item${ok === 1 ? '' : 's'} added to cart`)
   }
 
   if (loading) return <Shell><p className="text-sm">Loading…</p></Shell>
   if (!customer) return <Shell><p className="text-sm"><Link href={`/login?next=/designs/${taskId}`} className="underline">Sign in</Link> to open this design.</p></Shell>
   if (error) return <Shell><p className="text-sm text-red-600">{error}</p></Shell>
   if (!data) return <Shell wide><div className="w-full aspect-[16/10] bg-[#F5F4F0] animate-pulse" /></Shell>
+  if (data.status === 'FAILED') {
+    return <Shell><p className="text-sm">This design failed to generate. Try scanning the room again in the app.</p></Shell>
+  }
   if (data.status !== 'COMPLETE' || !data.result?.artifacts) {
-    return <Shell><p className="text-sm">This design is still {data.status.toLowerCase().replace(/_/g, ' ')}. Check back in a few minutes.</p></Shell>
+    const label = data.status === 'COMPLETE' ? 'finishing up' : `still ${data.status.toLowerCase().replace(/_/g, ' ')}`
+    return <Shell><p className="text-sm">This design is {label}. Check back in a few minutes.</p></Shell>
   }
 
   const { result } = data
@@ -214,6 +241,7 @@ export default function DesignDetailPage() {
             ))}
           </ul>
           <p className="text-[11px] text-[#8E8E8E] mt-4">Changes are saved to your account and show up in the app too.</p>
+          <button onClick={deleteDesign} className="mt-6 text-xs text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Delete this design</button>
         </aside>
       </div>
 

@@ -32,7 +32,7 @@ export default function ProductCard({ product, badge, original }: { product: Pro
   const onAdd = async () => {
     const variant = product.variants?.[0]
     if (!variant) return
-    await add(variant.id, 1)
+    if (!(await add(variant.id, 1))) return
     setAdded(true)
     setTimeout(() => setAdded(false), 1500)
   }

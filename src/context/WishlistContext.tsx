@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Product, productImage, productPrice, readWishlist, WishlistItem, writeWishlist } from '@/lib/medusa'
 import { useAuth } from './AuthContext'
+import { toast } from '@/components/Toast'
 
 type WishlistState = {
   items: WishlistItem[]
@@ -23,10 +24,16 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
   }, [customer])
 
   const persist = useCallback(async (next: WishlistItem[]) => {
+    const previous = items
     setItems(next)
-    await writeWishlist(next)
-    await refresh()
-  }, [refresh])
+    try {
+      await writeWishlist(next)
+      await refresh()
+    } catch {
+      setItems(previous)
+      toast.error('Could not save your favorites. Please try again.')
+    }
+  }, [items, refresh])
 
   const has = useCallback((id: string) => items.some((i) => i.id === id), [items])
 

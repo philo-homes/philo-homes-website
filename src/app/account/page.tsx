@@ -12,6 +12,7 @@ import {
   PhoneStatus, requestPhoneCode, SavedAddress, submitReview, updateAddress, updateMe, verifyPhoneCode,
 } from '@/lib/medusa'
 import { formatDate, formatPrice } from '@/lib/format'
+import { toast } from '@/components/Toast'
 
 const EMPTY_ADDR: Omit<SavedAddress, 'id'> = { first_name: '', last_name: '', address_1: '', address_2: '', city: '', province: '', postal_code: '', country_code: 'us', phone: '' }
 
@@ -79,7 +80,13 @@ export default function AccountPage() {
   }
   const rate = async (productId: string, rating: number) => {
     setRatings((r) => ({ ...r, [productId]: rating }))
-    try { await submitReview({ product_id: productId, rating }) } catch (err: any) { alert(err?.message || 'Could not submit rating.') }
+    try {
+      await submitReview({ product_id: productId, rating })
+      toast.success('Thanks! Your rating was submitted.')
+    } catch (err: any) {
+      setRatings((r) => { const n = { ...r }; delete n[productId]; return n })
+      toast.error(err?.status === 404 ? 'Ratings are not available on this server yet.' : err?.message || 'Could not submit rating.')
+    }
   }
   const doChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,7 +95,7 @@ export default function AccountPage() {
   }
   const doDelete = async () => {
     if (!confirm('Delete your account permanently? This cannot be undone.')) return
-    try { await deleteAccount(); signOut() } catch (err: any) { alert(err?.message || 'Could not delete account.') }
+    try { await deleteAccount(); signOut() } catch (err: any) { toast.error(err?.message || 'Could not delete account.') }
   }
 
   const TABS = [['profile', 'Profile'], ['orders', 'Orders'], ['addresses', 'Addresses'], ['security', 'Security']] as const

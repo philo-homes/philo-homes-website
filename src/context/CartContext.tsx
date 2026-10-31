@@ -1,14 +1,16 @@
 'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { addLineItem, Cart, ensureCart, getStoredCartId, removeLineItem, updateLineItem } from '@/lib/medusa'
 import { useAuth } from './AuthContext'
+import { toast } from '@/components/Toast'
 
 type CartState = {
   cart: Cart | null
   count: number
   busy: boolean
-  add: (variantId: string, quantity?: number) => Promise<void>
+  add: (variantId: string, quantity?: number) => Promise<boolean>
   update: (lineId: string, quantity: number) => Promise<void>
   remove: (lineId: string) => Promise<void>
   refresh: () => Promise<void>
@@ -45,6 +47,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const c = cart ?? (await ensureCart(customer))
       setCart(await addLineItem(c.id, variantId, quantity))
+      toast.success('Added to cart')
+      return true
+    } catch (e: any) {
+      // e.g. out of stock, variant without a price, backend down
+      toast.error(e?.message || 'Could not add to cart.')
+      return false
     } finally {
       setBusy(false)
     }
@@ -55,6 +63,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setBusy(true)
     try {
       setCart(quantity <= 0 ? await removeLineItem(cart.id, lineId) : await updateLineItem(cart.id, lineId, quantity))
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not update the cart.')
     } finally {
       setBusy(false)
     }
@@ -65,6 +75,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setBusy(true)
     try {
       setCart(await removeLineItem(cart.id, lineId))
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not remove the item.')
     } finally {
       setBusy(false)
     }

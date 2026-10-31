@@ -38,7 +38,7 @@ export default function ProductPage() {
 
   const onAdd = async () => {
     if (!variant) return
-    await add(variant.id, qty)
+    if (!(await add(variant.id, qty))) return
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }

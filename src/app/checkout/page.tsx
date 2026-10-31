@@ -96,12 +96,22 @@ export default function CheckoutPage() {
       setError('A verified phone number is required to place an order. Verify it in your account first.')
       return
     }
+    if (options.length > 0 && !optionId) {
+      setError('Please choose a delivery option.')
+      return
+    }
     setBusy(true)
     try {
       let c = await updateCartCheckoutInfo(cart.id, { email, shipping_address: addr })
       if (optionId) c = await addShippingMethod(cart.id, optionId)
       if (promo.trim()) {
-        try { c = await applyPromoCode(cart.id, promo.trim()) } catch (err: any) { setError(err?.message ?? 'Promo code not accepted.') }
+        try {
+          c = await applyPromoCode(cart.id, promo.trim())
+        } catch (err: any) {
+          setCart(c)
+          setError(err?.message ?? 'That promo code was not accepted. Remove it or try another.')
+          return
+        }
       }
       setCart(c)
       const secret = await initStripeSession(cart.id)

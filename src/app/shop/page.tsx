@@ -7,7 +7,7 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import Shell from '@/components/Shell'
 import ProductCard from '@/components/ProductCard'
 import { Button } from '@/components/Section'
-import { listProducts, Product } from '@/lib/medusa'
+import { catalog, listProducts, Product } from '@/lib/medusa'
 import {
   applyFilters, COLOR_FILTERS, EMPTY_FILTERS, FilterState, MATERIAL_FILTERS, PRICE_BUCKETS, productCategory, SORT_OPTIONS, STYLE_FILTERS,
 } from '@/lib/catalog'
@@ -30,7 +30,7 @@ function ShopInner() {
 
   useEffect(() => {
     setLoading(true)
-    listProducts({ q: q || undefined }).then(setProducts).catch(() => setProducts([])).finally(() => setLoading(false))
+    ;(q ? listProducts({ q }) : catalog()).then(setProducts).catch(() => setProducts([])).finally(() => setLoading(false))
   }, [q])
 
   // Only the categories present in the current result set (same as the app).
