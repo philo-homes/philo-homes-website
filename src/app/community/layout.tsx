@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Design Community',
+  title: { default: 'Design Community', template: '%s | Philo Homes' },
   description:
     "Join the Philo Homes design community and be the first to know when we launch.",
   alternates: { canonical: '/community' },
