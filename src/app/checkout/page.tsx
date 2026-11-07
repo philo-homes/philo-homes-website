@@ -68,6 +68,7 @@ export default function CheckoutPage() {
   const [busy, setBusy] = useState(false)
   const [phoneOk, setPhoneOk] = useState<boolean | null>(null)
   const [saved, setSavedAddresses] = useState<SavedAddress[]>([])
+  const [usingSaved, setUsingSaved] = useState<string | null>(null)
 
   useEffect(() => {
     if (customer) {
@@ -157,33 +158,50 @@ export default function CheckoutPage() {
               )}
               <h2 className="text-lg" style={{ fontFamily: "'Henry Trial', serif" }}>Shipping Address</h2>
               {saved.length > 0 && (
-                <label className="block text-sm">
-                  <span className="block text-xs text-[#4B4B4B] mb-1">Use a saved address</span>
-                  <select
-                    defaultValue=""
-                    onChange={(e) => {
-                      const a = saved.find((x) => x.id === e.target.value)
-                      if (!a) return
-                      setAddr({
-                        first_name: a.first_name ?? addr.first_name,
-                        last_name: a.last_name ?? addr.last_name,
-                        address_1: a.address_1,
-                        address_2: a.address_2 ?? '',
-                        city: a.city,
-                        province: a.province ?? '',
-                        postal_code: a.postal_code,
-                        country_code: a.country_code || 'us',
-                        phone: a.phone ?? addr.phone,
-                      })
-                    }}
-                    className="w-full border border-[#e1e1e1] px-3 py-2 bg-white"
-                  >
-                    <option value="">Choose…</option>
-                    {saved.map((a) => (
-                      <option key={a.id} value={a.id}>{a.first_name} {a.last_name} — {a.address_1}, {a.city}</option>
-                    ))}
-                  </select>
-                </label>
+                <div>
+                  <p className="text-xs text-[#4B4B4B] mb-2">Deliver to a saved address</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {saved.map((a) => {
+                      const active = usingSaved === a.id
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => {
+                            setUsingSaved(a.id)
+                            setAddr({
+                              first_name: a.first_name ?? addr.first_name,
+                              last_name: a.last_name ?? addr.last_name,
+                              address_1: a.address_1,
+                              address_2: a.address_2 ?? '',
+                              city: a.city,
+                              province: a.province ?? '',
+                              postal_code: a.postal_code,
+                              country_code: a.country_code || 'us',
+                              phone: a.phone ?? addr.phone,
+                            })
+                          }}
+                          className={`text-left text-sm border p-3 transition-colors ${active ? 'border-[#D1903E] bg-[#FCF9F2]' : 'border-[#e1e1e1] hover:border-[#10182B]'}`}
+                        >
+                          <span className="flex items-center justify-between">
+                            <span className="font-medium">{a.first_name} {a.last_name}</span>
+                            <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${active ? 'border-[#D1903E]' : 'border-[#CACACA]'}`}>{active && <span className="w-2 h-2 rounded-full bg-[#D1903E]" />}</span>
+                          </span>
+                          <span className="block text-[#4B4B4B]">{a.address_1}{a.address_2 ? `, ${a.address_2}` : ''}</span>
+                          <span className="block text-[#4B4B4B]">{a.city}, {a.province} {a.postal_code}</span>
+                        </button>
+                      )
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => { setUsingSaved('new'); setAddr({ ...addr, address_1: '', address_2: '', city: '', province: '', postal_code: '' }) }}
+                      className={`text-left text-sm border border-dashed p-3 ${usingSaved === 'new' ? 'border-[#D1903E] bg-[#FCF9F2]' : 'border-[#CACACA] hover:border-[#10182B]'}`}
+                    >
+                      + Enter a new address
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#8E8E8E] mt-2">The fields below fill in automatically — you can still edit them.</p>
+                </div>
               )}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="First name" required value={addr.first_name} onChange={(e) => setAddr({ ...addr, first_name: e.target.value })} />
