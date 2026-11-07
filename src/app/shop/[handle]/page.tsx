@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { Heart, Star } from 'lucide-react'
+import { Heart, Share2, Star } from 'lucide-react'
 import Shell from '@/components/Shell'
 import { Button } from '@/components/Section'
-import { getProductByHandle, getReviews, Product, productPrice, ReviewSummary } from '@/lib/medusa'
+import { getProductByHandle, getProductById, getReviews, Product, productImage, productPrice, recordView, ReviewSummary } from '@/lib/medusa'
+import { useAuth } from '@/context/AuthContext'
+import { toast } from '@/components/Toast'
+import { normalizeMaterial } from '@/lib/catalog'
 import { formatPrice, formatDate } from '@/lib/format'
 import { useCart } from '@/context/CartContext'
 import { useWishlist } from '@/context/WishlistContext'
@@ -21,13 +24,37 @@ export default function ProductPage() {
   const [added, setAdded] = useState(false)
   const { add, busy } = useCart()
   const { has, toggle } = useWishlist()
+  const { customer } = useAuth()
 
   useEffect(() => {
-    getProductByHandle(handle).then((p) => {
+    // Links from the app/history carry a product id; the shop uses handles.
+    const load = handle.startsWith('prod_') ? getProductById(handle) : getProductByHandle(handle)
+    load.then((p) => {
       setProduct(p)
       if (p) getReviews(p.id).then(setReviews)
     })
   }, [handle])
+
+  // Recently viewed, shared with the app through the account.
+  useEffect(() => {
+    if (product && customer) {
+      recordView(customer, { id: product.id, name: product.title, image: productImage(product), price: productPrice(product) ?? 0 }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id, customer?.id])
+
+  const share = async () => {
+    const url = typeof window !== 'undefined' ? window.location.href : ''
+    try {
+      if (navigator.share) await navigator.share({ title: product?.title, text: `Check out this ${product?.title} from Philo Homes!`, url })
+      else {
+        await navigator.clipboard.writeText(url)
+        toast.success('Link copied')
+      }
+    } catch {
+      // user dismissed the share sheet
+    }
+  }
 
   if (product === undefined) return <Shell><p className="text-sm">Loading…</p></Shell>
   if (!product) return <Shell><p className="text-sm">Product not found. <Link href="/shop" className="underline">Back to shop</Link></p></Shell>
@@ -78,7 +105,19 @@ export default function ProductPage() {
             <button onClick={async () => { if ((await toggle(product)) === 'sign-in') router.push(`/login?next=/shop/${handle}`) }} className="w-11 h-11 border border-[#e1e1e1] flex items-center justify-center" aria-label="Favorite">
               <Heart size={18} className={liked ? 'fill-[#D1903E] text-[#D1903E]' : ''} />
             </button>
+            <button onClick={share} className="w-11 h-11 border border-[#e1e1e1] flex items-center justify-center" aria-label="Share">
+              <Share2 size={18} />
+            </button>
           </div>
+          {(product.material || product.length || product.weight) && (
+            <dl className="mt-8 text-sm grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
+              {product.material && <><dt className="text-[#8E8E8E]">Material</dt><dd>{normalizeMaterial(product.material) === 'Other' ? product.material.replace(/^\s*\d+\s*/, '') : normalizeMaterial(product.material)}</dd></>}
+              {product.length && product.width && product.height && (
+                <><dt className="text-[#8E8E8E]">Dimensions</dt><dd>{product.length} × {product.width} × {product.height} cm</dd></>
+              )}
+              {product.weight && <><dt className="text-[#8E8E8E]">Weight</dt><dd>{product.weight} kg</dd></>}
+            </dl>
+          )}
           {product.description && <p className="text-sm text-[#4B4B4B] leading-relaxed mt-8 whitespace-pre-line">{product.description}</p>}
           {variant?.sku && <p className="text-xs text-[#8E8E8E] mt-6">SKU {variant.sku}</p>}
 

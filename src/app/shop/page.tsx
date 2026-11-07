@@ -7,7 +7,11 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import Shell from '@/components/Shell'
 import ProductCard from '@/components/ProductCard'
 import { Button } from '@/components/Section'
-import { catalog, listProducts, Product } from '@/lib/medusa'
+import { catalog, HistoryItem, listProducts, Product, readHistory } from '@/lib/medusa'
+import { STORE_CATEGORIES } from '@/lib/templates'
+import { useAuth } from '@/context/AuthContext'
+import Link from 'next/link'
+import { formatPrice } from '@/lib/format'
 import {
   applyFilters, COLOR_FILTERS, EMPTY_FILTERS, FilterState, MATERIAL_FILTERS, PRICE_BUCKETS, productCategory, SORT_OPTIONS, STYLE_FILTERS,
 } from '@/lib/catalog'
@@ -27,6 +31,8 @@ function ShopInner() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
   const [panel, setPanel] = useState(false)
   const [loading, setLoading] = useState(true)
+  const { customer } = useAuth()
+  const recentlyViewed: HistoryItem[] = useMemo(() => readHistory(customer).slice(0, 8), [customer])
 
   useEffect(() => {
     setLoading(true)
@@ -51,9 +57,44 @@ function ShopInner() {
 
   return (
     <>
+      {!q && (
+        <section className="mb-10">
+          {/* Category tiles + quick shelves, as on the app's Store tab */}
+          <div className="grid grid-cols-4 md:grid-cols-8 gap-3 mb-6">
+            {STORE_CATEGORIES.map((c) => (
+              <Link key={c.name} href={`/shop?q=${encodeURIComponent(c.q)}`} className="text-center text-xs py-3 border border-[#e8e4dc] hover:border-[#D1903E] hover:text-[#D1903E]">{c.name}</Link>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs">
+            <Link href="/deals" className="px-3 py-1.5 bg-[#E5C68C]/60 hover:bg-[#E5C68C]">Special Deals</Link>
+            <button onClick={() => setFilters({ ...EMPTY_FILTERS, sort: 'price-high-low' })} className="px-3 py-1.5 bg-[#F5F4F0] hover:bg-[#EEEEEE]">Premium Collection</button>
+            <button onClick={() => setFilters({ ...EMPTY_FILTERS, sort: 'best-match' })} className="px-3 py-1.5 bg-[#F5F4F0] hover:bg-[#EEEEEE]">Fresh Arrivals</button>
+            <Link href="/templates" className="px-3 py-1.5 bg-[#F5F4F0] hover:bg-[#EEEEEE]">Room Templates</Link>
+          </div>
+          {recentlyViewed.length > 0 && (
+            <div className="mt-8">
+              <p className="text-xs uppercase tracking-wider text-[#8E8E8E] mb-3">Recently viewed</p>
+              <div className="flex gap-4 overflow-x-auto pb-2">
+                {recentlyViewed.map((h) => (
+                  <Link key={h.id} href={`/shop/${h.id}`} className="w-28 shrink-0">
+                    <div className="aspect-square bg-[#F5F4F0] overflow-hidden">
+                      {h.image && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={h.image} alt="" className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    <p className="text-xs mt-1 truncate">{h.name}</p>
+                    <p className="text-xs text-[#4B4B4B]">{formatPrice(h.price)}</p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: "'Henry Trial', serif" }}>{q ? `Results for “${q}”` : 'Shop'}</h1>
+          <h1 className="text-3xl" style={{ fontFamily: "'Henry Trial', serif" }}>{q ? `Results for “${q}”` : 'All products'}</h1>
           <p className="text-sm text-[#4B4B4B] mt-1">{loading ? 'Loading…' : `${results.length} of ${products.length} products`}</p>
         </div>
         <div className="flex gap-3 text-sm">

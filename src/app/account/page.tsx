@@ -12,6 +12,7 @@ import {
   PhoneStatus, requestPhoneCode, SavedAddress, submitReview, updateAddress, updateMe, verifyPhoneCode,
 } from '@/lib/medusa'
 import { formatDate, formatPrice } from '@/lib/format'
+import { orderStatusColor, orderStatusLabel } from '@/lib/orders'
 import { toast } from '@/components/Toast'
 
 const EMPTY_ADDR: Omit<SavedAddress, 'id'> = { first_name: '', last_name: '', address_1: '', address_2: '', city: '', province: '', postal_code: '', country_code: 'us', phone: '' }
@@ -50,7 +51,7 @@ export default function AccountPage() {
 
   const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
-    await updateMe({ first_name: first, last_name: last })
+    await updateMe({ first_name: first, last_name: last, phone: phone || null })
     await refresh()
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -125,8 +126,10 @@ export default function AccountPage() {
                 <Field label="First name" value={first} onChange={(e) => setFirst(e.target.value)} />
                 <Field label="Last name" value={last} onChange={(e) => setLast(e.target.value)} />
               </div>
+              <Field label="Phone (contact)" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(734) 555-0100" />
               <Button type="submit" variant="outline">{saved ? 'Saved ✓' : 'Save'}</Button>
             </form>
+            <p className="text-xs text-[#8E8E8E] mt-6">Need help? <Link href="/book-demo" className="underline">Contact us</Link>.</p>
           </section>
           <section>
             <h2 className="text-lg mb-2" style={{ fontFamily: "'Henry Trial', serif" }}>Phone number</h2>
@@ -154,10 +157,16 @@ export default function AccountPage() {
         <section>
           {orders.length === 0 ? <p className="text-sm text-[#4B4B4B]">No orders yet.</p> : (
             <ul className="divide-y divide-[#e8e4dc]">
-              {orders.map((o) => (
+              {orders.map((o) => {
+                const label = orderStatusLabel(o)
+                const color = orderStatusColor(label)
+                return (
                 <li key={o.id} className="py-4 text-sm">
                   <div className="flex justify-between">
-                    <div><p>Order #{o.display_id}</p><p className="text-xs text-[#8E8E8E]">{formatDate(o.created_at)} · {o.status}</p></div>
+                    <div>
+                      <Link href={`/account/orders/${o.id}`} className="underline">Order #{o.display_id}</Link>
+                      <p className="text-xs text-[#8E8E8E] flex items-center gap-2">{formatDate(o.created_at)} <span className="inline-flex items-center gap-1" style={{ color }}><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />{label}</span></p>
+                    </div>
                     <p>{formatPrice(o.total)}</p>
                   </div>
                   <ul className="mt-3 space-y-2">
@@ -187,7 +196,8 @@ export default function AccountPage() {
                   </ul>
                   <p className="text-[11px] text-[#8E8E8E] mt-2">Only purchased items can be rated. Your review appears on the product page.</p>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </section>

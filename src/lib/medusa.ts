@@ -94,6 +94,10 @@ export type Product = {
   tags?: { id: string; value: string }[]
   metadata?: Record<string, any> | null
   material?: string | null
+  length?: number | null
+  width?: number | null
+  height?: number | null
+  weight?: number | null
   options?: { id: string; title: string; values?: { id: string; value: string }[] }[]
   variants: {
     id: string
@@ -112,7 +116,7 @@ export function productImage(p: Product): string {
   return p.images?.[0]?.url || p.thumbnail || ''
 }
 
-const PRODUCT_FIELDS = '*variants.calculated_price,+variants.sku,*images,*collection,*categories,*tags,+metadata,+material,*options,*options.values'
+const PRODUCT_FIELDS = '*variants.calculated_price,+variants.sku,*images,*collection,*categories,*tags,+metadata,+material,+length,+width,+height,+weight,*options,*options.values'
 
 export async function listProducts(params: { q?: string; limit?: number; collection_id?: string } = {}) {
   const sp = new URLSearchParams({
@@ -321,9 +325,34 @@ export async function getNewUserEligibility(): Promise<NewUserEligibility | null
 
 // ---- Orders ---------------------------------------------------------------------
 
+const ORDER_FIELDS = '+status,+fulfillment_status,+payment_status,*items,*shipping_address,+subtotal,+shipping_total,+tax_total,+discount_total,+total'
 export async function listOrders() {
-  const data = await storeFetch<{ orders: any[] }>('/store/orders?limit=50&order=-created_at')
+  const data = await storeFetch<{ orders: any[] }>(`/store/orders?limit=50&order=-created_at&fields=${encodeURIComponent(ORDER_FIELDS)}`)
   return data.orders ?? []
+}
+export async function getOrder(id: string) {
+  const data = await storeFetch<{ order: any }>(`/store/orders/${id}?fields=${encodeURIComponent(ORDER_FIELDS)}`)
+  return data.order
+}
+
+// ---- Recently viewed (customer metadata browsing_history, same as the app) ----
+
+export type HistoryItem = { id: string; name: string; image: string; price: number; viewedAt?: string }
+const HISTORY_MAX = 20
+export function readHistory(customer: Customer | null): HistoryItem[] {
+  const raw = customer?.metadata?.browsing_history
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+export async function recordView(customer: Customer | null, item: HistoryItem) {
+  if (!customer) return
+  const next = [{ ...item, viewedAt: new Date().toISOString() }, ...readHistory(customer).filter((h) => h.id !== item.id)].slice(0, HISTORY_MAX)
+  await setMetadata({ browsing_history: JSON.stringify(next) })
 }
 
 // ---- Cart ---------------------------------------------------------------------
@@ -529,8 +558,23 @@ export function readWishlist(customer: Customer | null): WishlistItem[] {
     return []
   }
 }
-export async function writeWishlist(items: WishlistItem[]) {
-  return setMetadata({ wishlist: JSON.stringify(items), wishlist_updated_at: new Date().toISOString() })
+// Albums ("专辑"): a folder is a named subset of the flat wishlist, stored as
+// item ids. Synced under the same wishlist_updated_at clock as the app.
+export type WishlistFolder = { id: string; name: string; itemIds: string[]; createdAt: string }
+export function readWishlistFolders(customer: Customer | null): WishlistFolder[] {
+  const raw = customer?.metadata?.wishlist_folders
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+export async function writeWishlist(items: WishlistItem[], folders?: WishlistFolder[]) {
+  const body: Record<string, unknown> = { wishlist: JSON.stringify(items), wishlist_updated_at: new Date().toISOString() }
+  if (folders) body.wishlist_folders = JSON.stringify(folders)
+  return setMetadata(body)
 }
 
 // ---- Design names + edits (customer metadata) ------------------------------------

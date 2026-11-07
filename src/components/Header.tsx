@@ -6,12 +6,13 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Heart, Menu, Search, ShoppingCart, User, X } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { useCart } from '@/context/CartContext'
+import SearchBox from './SearchBox'
 
 const NAV = [
   { name: 'Shop', href: '/shop' },
   { name: 'Deals', href: '/deals' },
   { name: 'My Designs', href: '/designs' },
-  { name: 'Inspiration', href: '/case-study' },
+  { name: 'Inspiration', href: '/templates' },
   { name: 'About Us', href: '/about' },
 ]
 
@@ -66,17 +67,7 @@ export default function Header() {
           </div>
         </div>
 
-        {showSearch && (
-          <form onSubmit={submitSearch} className="pb-3">
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search furniture…"
-              className="w-full border border-[#e8e4dc] px-4 py-2 text-sm focus:outline-none focus:border-[#D1903E]"
-            />
-          </form>
-        )}
+        {showSearch && <SearchBox onDone={() => setShowSearch(false)} />}
 
         <nav className="hidden md:flex items-center justify-between h-10 text-[13px] tracking-wide">
           {NAV.map((item) => {

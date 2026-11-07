@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Shell from '@/components/Shell'
 import { useAuth } from '@/context/AuthContext'
 import { formatDate } from '@/lib/format'
+import DesignTabs from '@/components/DesignTabs'
 
 type Design = { task_id: string; created_at: string; status: string; name: string | null; preview: string | null; room_type?: string; design_style?: string }
 
@@ -32,12 +33,8 @@ export default function DesignsPage() {
 
   return (
     <Shell wide>
-      <div className="flex items-end justify-between mb-8">
-        <div>
-          <h1 className="text-3xl" style={{ fontFamily: "'Henry Trial', serif" }}>My Designs</h1>
-          <p className="text-sm text-[#4B4B4B] mt-1">Rooms you scanned in the Philo Homes app. Open one to walk through it, change the furniture and shop the look.</p>
-        </div>
-      </div>
+      <DesignTabs active="recent" />
+      <p className="text-sm text-[#4B4B4B] mb-8">Rooms you scanned in the Philo Homes app. Open one to walk through it, change the furniture and shop the look.</p>
       {loading ? <p className="text-sm">Loading…</p> : !customer ? (
         <p className="text-sm text-[#4B4B4B]"><Link href="/login?next=/designs" className="underline">Sign in</Link> with the account you use in the app.</p>
       ) : error ? (
