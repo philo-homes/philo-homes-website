@@ -55,7 +55,7 @@ export default function ProductCard({ product, badge, original }: { product: Pro
         <button type="button" onClick={onHeart} aria-label={liked ? 'Remove from favorites' : 'Add to favorites'} className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center hover:scale-105">
           <Heart size={16} className={liked ? 'fill-[#D1903E] text-[#D1903E]' : 'text-[#10182B]'} />
         </button>
-        <button type="button" onClick={onAdd} disabled={busy} className="absolute bottom-2 left-2 right-2 z-10 bg-[#10182B] text-white text-xs py-2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50">
+        <button type="button" onClick={onAdd} disabled={busy} className="absolute bottom-2 left-2 right-2 z-10 bg-[#10182B] text-white text-xs py-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity disabled:opacity-50">
           {added ? 'Added ✓' : 'Add to cart'}
         </button>
       </div>
