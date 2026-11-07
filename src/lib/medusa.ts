@@ -116,7 +116,10 @@ export function productImage(p: Product): string {
   return p.images?.[0]?.url || p.thumbnail || ''
 }
 
-const PRODUCT_FIELDS = '*variants.calculated_price,+variants.sku,*images,*collection,*categories,*tags,+metadata,+material,+length,+width,+height,+weight,*options,*options.values'
+// NOTE: no `*categories` here — the single-product endpoint answers
+// "not found" for a product with zero categories when that relation is
+// requested (every live product currently has none).
+const PRODUCT_FIELDS = '*variants.calculated_price,+variants.sku,*images,*collection,*tags,+metadata,+material,+length,+width,+height,+weight,*options,*options.values'
 
 export async function listProducts(params: { q?: string; limit?: number; collection_id?: string } = {}) {
   const sp = new URLSearchParams({
