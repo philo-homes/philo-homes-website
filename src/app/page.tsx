@@ -97,7 +97,7 @@ export default function Home() {
           </div>
         </div>
         <div className="px-5 md:px-10 py-10">
-          <SectionTitle title="" href="/shop" />
+          <SectionTitle title="" href="/shop#deals" hrefLabel="All deals" />
           <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
             {products.slice(6, 11).map((p) => <ProductCard key={p.id} product={p} />)}
           </div>

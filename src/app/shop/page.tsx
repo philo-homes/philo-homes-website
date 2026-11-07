@@ -9,6 +9,8 @@ import ProductCard from '@/components/ProductCard'
 import { Button } from '@/components/Section'
 import { catalog, HistoryItem, listProducts, Product, readHistory } from '@/lib/medusa'
 import { STORE_CATEGORIES } from '@/lib/templates'
+import SaleBanner from '@/components/SaleBanner'
+import { Deal, pickDeals } from '@/lib/catalog'
 import { useAuth } from '@/context/AuthContext'
 import Link from 'next/link'
 import { formatPrice } from '@/lib/format'
@@ -33,6 +35,8 @@ function ShopInner() {
   const [loading, setLoading] = useState(true)
   const { customer } = useAuth()
   const recentlyViewed: HistoryItem[] = useMemo(() => readHistory(customer).slice(0, 8), [customer])
+  // Deals come from the same catalog load (no second request).
+  const deals: Deal[] = useMemo(() => (q ? [] : pickDeals(products)), [products, q])
 
   useEffect(() => {
     setLoading(true)
@@ -66,7 +70,7 @@ function ShopInner() {
             ))}
           </div>
           <div className="flex flex-wrap gap-3 text-xs">
-            <Link href="/deals" className="px-3 py-1.5 bg-[#E5C68C]/60 hover:bg-[#E5C68C]">Special Deals</Link>
+            <a href="#deals" className="px-3 py-1.5 bg-[#E5C68C]/60 hover:bg-[#E5C68C]">Special Deals</a>
             <button onClick={() => setFilters({ ...EMPTY_FILTERS, sort: 'price-high-low' })} className="px-3 py-1.5 bg-[#F5F4F0] hover:bg-[#EEEEEE]">Premium Collection</button>
             <button onClick={() => setFilters({ ...EMPTY_FILTERS, sort: 'best-match' })} className="px-3 py-1.5 bg-[#F5F4F0] hover:bg-[#EEEEEE]">Fresh Arrivals</button>
             <Link href="/templates" className="px-3 py-1.5 bg-[#F5F4F0] hover:bg-[#EEEEEE]">Room Templates</Link>
@@ -92,6 +96,7 @@ function ShopInner() {
           )}
         </section>
       )}
+      {!q && !loading && <SaleBanner deals={deals} />}
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl" style={{ fontFamily: "'Henry Trial', serif" }}>{q ? `Results for “${q}”` : 'All products'}</h1>

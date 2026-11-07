@@ -10,7 +10,6 @@ import SearchBox from './SearchBox'
 
 const NAV = [
   { name: 'Shop', href: '/shop' },
-  { name: 'Deals', href: '/deals' },
   { name: 'My Designs', href: '/designs' },
   { name: 'Inspiration', href: '/templates' },
   { name: 'About Us', href: '/about' },
