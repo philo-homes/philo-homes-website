@@ -240,7 +240,7 @@ export default function CheckoutPage() {
               ) : !clientSecret ? (
                 <p className="text-sm text-[#4B4B4B]">Card payment isn&apos;t available right now. Please try again shortly.</p>
               ) : (
-                <Elements stripe={stripePromise} options={{ clientSecret }}>
+                <Elements stripe={stripePromise} options={{ clientSecret, locale: 'en', appearance: { variables: { colorPrimary: '#D1903E', borderRadius: '0px', fontFamily: 'GT America, sans-serif' } } }}>
                   <PayStep cartId={cart!.id} onDone={(id, displayId) => { setOrderNo(displayId ? `#${displayId}` : id); setStep('done'); refresh() }} />
                 </Elements>
               )}
