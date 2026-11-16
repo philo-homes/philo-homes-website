@@ -4,9 +4,10 @@ import Footer from '@/components/Footer'
 import { type Block, contact, meta, sections, summary } from './content'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | Philo Homes',
+  title: 'Privacy Policy',
   description:
     'How Philo Homes collects, uses, discloses, and retains personal information across the Philo Homes website and iOS app.',
+  alternates: { canonical: '/privacy' },
 }
 
 function Blocks({ blocks }: { blocks: Block[] }) {
