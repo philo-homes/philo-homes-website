@@ -13,6 +13,7 @@ import {
 } from '@/lib/medusa'
 import { formatDate, formatPrice } from '@/lib/format'
 import { orderStatusColor, orderStatusLabel } from '@/lib/orders'
+import { buildPackages, packagesSummary } from '@/lib/packages'
 import { toast } from '@/components/Toast'
 
 const EMPTY_ADDR: Omit<SavedAddress, 'id'> = { first_name: '', last_name: '', address_1: '', address_2: '', city: '', province: '', postal_code: '', country_code: 'us', phone: '' }
@@ -160,12 +161,13 @@ export default function AccountPage() {
               {orders.map((o) => {
                 const label = orderStatusLabel(o)
                 const color = orderStatusColor(label)
+                const pkgSummary = packagesSummary(buildPackages(o.items ?? [], o.fulfillments))
                 return (
                 <li key={o.id} className="py-4 text-sm">
                   <div className="flex justify-between">
                     <div>
                       <Link href={`/account/orders/${o.id}`} className="underline">Order #{o.display_id}</Link>
-                      <p className="text-xs text-[#8E8E8E] flex items-center gap-2">{formatDate(o.created_at)} <span className="inline-flex items-center gap-1" style={{ color }}><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />{label}</span></p>
+                      <p className="text-xs text-[#8E8E8E] flex items-center gap-2">{formatDate(o.created_at)} <span className="inline-flex items-center gap-1" style={{ color }}><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />{label}</span>{pkgSummary && <span>· {pkgSummary}</span>}</p>
                     </div>
                     <p>{formatPrice(o.total)}</p>
                   </div>

@@ -328,7 +328,10 @@ export async function getNewUserEligibility(): Promise<NewUserEligibility | null
 
 // ---- Orders ---------------------------------------------------------------------
 
-const ORDER_FIELDS = '+status,+fulfillment_status,+payment_status,*items,*shipping_address,+subtotal,+shipping_total,+tax_total,+discount_total,+total'
+// `*fulfillments(.items|.labels)` = which items shipped in which box, with tracking. The
+// nested two need the backend's allowFields for /store/orders* (src/api/middlewares.ts);
+// an older server just omits them and the pages fall back to a plain item list.
+const ORDER_FIELDS = '+status,+fulfillment_status,+payment_status,*items,*shipping_address,+subtotal,+shipping_total,+tax_total,+discount_total,+total,*fulfillments,*fulfillments.items,*fulfillments.labels'
 export async function listOrders() {
   const data = await storeFetch<{ orders: any[] }>(`/store/orders?limit=50&order=-created_at&fields=${encodeURIComponent(ORDER_FIELDS)}`)
   return data.orders ?? []

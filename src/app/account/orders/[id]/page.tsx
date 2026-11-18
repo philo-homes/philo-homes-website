@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext'
 import { getOrder, submitReview } from '@/lib/medusa'
 import { formatDate, formatPrice } from '@/lib/format'
 import { orderStatusColor, orderStatusLabel } from '@/lib/orders'
+import { buildPackages, packageStatusLabel, type OrderPackage, type PackageItem } from '@/lib/packages'
 
 // Full detail for one order, like the app's OrderDetailScreen: status, items
 // (each ratable, with an optional comment), totals and the delivery address.
@@ -36,6 +37,61 @@ export default function OrderDetailPage() {
   const label = orderStatusLabel(order)
   const color = orderStatusColor(label)
   const addr = order.shipping_address
+
+  // One purchased line: inside a package (qty = how many of it are in that box)
+  // or in the plain list (qty = the whole line). Ratings hang off the product.
+  const renderItem = (it: any, qty: number, key: string) => {
+      const pid = it.product_id ?? it.variant?.product_id
+      const r = pid ? ratings[pid] ?? 0 : 0
+      return (
+        <li key={key} className="py-4">
+          <div className="flex gap-3">
+            <div className="w-16 h-16 bg-[#F5F4F0] shrink-0">
+              {it.thumbnail && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={it.thumbnail} alt="" className="w-full h-full object-cover" />
+              )}
+            </div>
+            <div className="flex-1 text-sm">
+              <p>{it.product_title ?? it.title}</p>
+              <p className="text-xs text-[#8E8E8E]">{it.variant_title && it.variant_title !== it.product_title ? `${it.variant_title} · ` : ''}× {qty}</p>
+              <p className="mt-1">{formatPrice((it.unit_price ?? 0) * qty)}</p>
+            </div>
+          </div>
+          {pid && (
+            <div className="mt-3 pl-[76px] text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[#4B4B4B]">Rate it:</span>
+                <span className="flex">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <button key={i} onClick={() => rate(pid, i + 1)} aria-label={`${i + 1} stars`}>
+                      <Star size={16} className={i < r ? 'fill-[#D1903E] text-[#D1903E]' : 'text-[#CACACA]'} />
+                    </button>
+                  ))}
+                </span>
+                {r > 0 && commenting !== pid && <button onClick={() => setCommenting(pid)} className="underline ml-2">Add a comment (optional)</button>}
+              </div>
+              {commenting === pid && (
+                <div className="mt-2 flex gap-2">
+                  <input value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} placeholder="What did you think?" className="flex-1 border border-[#e1e1e1] px-2 py-1" />
+                  <Button variant="outline" className="!py-1" onClick={() => rate(pid, r, comment.trim() || undefined)}>Post</Button>
+                  <button onClick={() => { setCommenting(null); setComment('') }} className="underline">Cancel</button>
+                </div>
+              )}
+            </div>
+          )}
+        </li>
+      )
+  }
+
+  const view = buildPackages(order.items ?? [], order.fulfillments)
+  const lineById = new Map<string, any>((order.items ?? []).map((i: any) => [i.id, i]))
+  const asLine = (pi: PackageItem) =>
+    (pi.lineItemId && lineById.get(pi.lineItemId)) || {
+      id: pi.lineItemId ?? pi.title, title: pi.title, thumbnail: pi.thumbnail, quantity: pi.quantity, unit_price: pi.unitPrice,
+    }
+  const packageCount = view ? view.packages.length + (view.unshipped.length ? 1 : 0) : 0
+  const ratingNote = <p className="text-[11px] text-[#8E8E8E] mt-3">Only purchased items can be rated. Your review appears on the product page.</p>
 
   const rate = async (productId: string, rating: number, content?: string) => {
     setRatings((r) => ({ ...r, [productId]: rating }))
@@ -64,54 +120,49 @@ export default function OrderDetailPage() {
       </div>
 
       <div className="grid md:grid-cols-12 gap-10">
-        <section className="md:col-span-7">
-          <h2 className="text-lg mb-3" style={{ fontFamily: "'Henry Trial', serif" }}>Items</h2>
-          <ul className="divide-y divide-[#e8e4dc]">
-            {(order.items ?? []).map((it: any) => {
-              const pid = it.product_id ?? it.variant?.product_id
-              const r = pid ? ratings[pid] ?? 0 : 0
-              return (
-                <li key={it.id} className="py-4">
-                  <div className="flex gap-3">
-                    <div className="w-16 h-16 bg-[#F5F4F0] shrink-0">
-                      {it.thumbnail && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={it.thumbnail} alt="" className="w-full h-full object-cover" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-sm">
-                      <p>{it.product_title ?? it.title}</p>
-                      <p className="text-xs text-[#8E8E8E]">{it.variant_title && it.variant_title !== it.product_title ? `${it.variant_title} · ` : ''}× {it.quantity}</p>
-                      <p className="mt-1">{formatPrice((it.unit_price ?? 0) * (it.quantity ?? 1))}</p>
-                    </div>
+        <section className="md:col-span-7 space-y-8">
+          {view && view.itemsKnown ? (
+            <>
+              {view.packages.map((pkg, idx) => (
+                <div key={pkg.id}>
+                  <PackageHeader pkg={pkg} index={idx} total={packageCount} />
+                  <ul className="divide-y divide-[#e8e4dc]">
+                    {pkg.items.map((pi, i) => renderItem(asLine(pi), pi.quantity, `${pkg.id}-${i}`))}
+                  </ul>
+                </div>
+              ))}
+              {view.unshipped.length > 0 && (
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <h2 className="text-lg" style={{ fontFamily: "'Henry Trial', serif" }}>{view.packages.length > 0 ? 'Not shipped yet' : 'Items'}</h2>
+                    <StatusBadge label="Preparing" />
                   </div>
-                  {pid && (
-                    <div className="mt-3 pl-[76px] text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[#4B4B4B]">Rate it:</span>
-                        <span className="flex">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <button key={i} onClick={() => rate(pid, i + 1)} aria-label={`${i + 1} stars`}>
-                              <Star size={16} className={i < r ? 'fill-[#D1903E] text-[#D1903E]' : 'text-[#CACACA]'} />
-                            </button>
-                          ))}
-                        </span>
-                        {r > 0 && commenting !== pid && <button onClick={() => setCommenting(pid)} className="underline ml-2">Add a comment (optional)</button>}
-                      </div>
-                      {commenting === pid && (
-                        <div className="mt-2 flex gap-2">
-                          <input value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} placeholder="What did you think?" className="flex-1 border border-[#e1e1e1] px-2 py-1" />
-                          <Button variant="outline" className="!py-1" onClick={() => rate(pid, r, comment.trim() || undefined)}>Post</Button>
-                          <button onClick={() => { setCommenting(null); setComment('') }} className="underline">Cancel</button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-          <p className="text-[11px] text-[#8E8E8E] mt-3">Only purchased items can be rated. Your review appears on the product page.</p>
+                  <ul className="divide-y divide-[#e8e4dc]">
+                    {view.unshipped.map((pi, i) => renderItem(asLine(pi), pi.quantity, `unshipped-${i}`))}
+                  </ul>
+                </div>
+              )}
+              {ratingNote}
+            </>
+          ) : (
+            <>
+              {view && view.packages.length > 0 && (
+                <div>
+                  <h2 className="text-lg mb-3" style={{ fontFamily: "'Henry Trial', serif" }}>Shipments</h2>
+                  <div className="space-y-3">
+                    {view.packages.map((pkg, idx) => <PackageHeader key={pkg.id} pkg={pkg} index={idx} total={view.packages.length} />)}
+                  </div>
+                </div>
+              )}
+              <div>
+                <h2 className="text-lg mb-3" style={{ fontFamily: "'Henry Trial', serif" }}>Items</h2>
+                <ul className="divide-y divide-[#e8e4dc]">
+                  {(order.items ?? []).map((it: any) => renderItem(it, it.quantity ?? 1, it.id))}
+                </ul>
+                {ratingNote}
+              </div>
+            </>
+          )}
         </section>
         <aside className="md:col-span-5 space-y-6">
           <div className="bg-[#FCF9F2] p-5">
@@ -137,5 +188,38 @@ export default function OrderDetailPage() {
         </aside>
       </div>
     </Shell>
+  )
+}
+
+function StatusBadge({ label }: { label: string }) {
+  const color = orderStatusColor(label)
+  return (
+    <span className="inline-flex items-center gap-2 text-xs px-3 py-1 shrink-0" style={{ color, backgroundColor: `${color}1A` }}>
+      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} /> {label}
+    </span>
+  )
+}
+
+// "Package 1 of 3 · Shipped Nov 12" with its tracking number(s) linking to the carrier.
+function PackageHeader({ pkg, index, total }: { pkg: OrderPackage; index: number; total: number }) {
+  const label = packageStatusLabel(pkg.status)
+  return (
+    <div className="flex items-start justify-between gap-3 mb-3">
+      <div>
+        <h2 className="text-lg" style={{ fontFamily: "'Henry Trial', serif" }}>{total > 1 ? `Package ${index + 1} of ${total}` : 'Package'}</h2>
+        {pkg.date && <p className="text-xs text-[#8E8E8E]">{label} {formatDate(pkg.date)}</p>}
+        {pkg.tracking.map((t) => (
+          <p key={t.number || t.url || 'track'} className="text-xs mt-1">
+            {t.carrier && <span className="text-[#4B4B4B]">{t.carrier} </span>}
+            {t.url ? (
+              <a href={t.url} target="_blank" rel="noopener noreferrer" className="underline text-[#2E6DA4]">{t.number || 'Track package'}</a>
+            ) : (
+              <span>{t.number}</span>
+            )}
+          </p>
+        ))}
+      </div>
+      <StatusBadge label={label} />
+    </div>
   )
 }
