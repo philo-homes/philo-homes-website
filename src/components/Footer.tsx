@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 
 const COLUMNS = [
-  { title: 'Company', links: [{ name: 'About Us', href: '/about' }, { name: 'Contact Us', href: '/book-demo' }, { name: 'Templates', href: '/templates' }, { name: 'Case Study', href: '/case-study' }] },
+  { title: 'Company', links: [{ name: 'About Us', href: '/about' }, { name: 'Contact Us', href: '/book-demo' }, { name: 'Templates', href: '/templates' }, { name: 'Case Study', href: '/case-study' }, { name: 'Blog', href: '/blog' }] },
   { title: 'Shop', links: [{ name: 'Shop', href: '/shop' }, { name: 'My Designs', href: '/designs' }, { name: 'Favorites', href: '/favorites' }, { name: 'Privacy Policy', href: '/privacy' }] },
 ]
 

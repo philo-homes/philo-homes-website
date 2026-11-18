@@ -12,6 +12,7 @@ const NAV = [
   { name: 'Shop', href: '/shop' },
   { name: 'My Designs', href: '/designs' },
   { name: 'Inspiration', href: '/templates' },
+  { name: 'Blog', href: '/blog' },
   { name: 'About Us', href: '/about' },
 ]
 

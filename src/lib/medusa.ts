@@ -326,6 +326,32 @@ export async function getNewUserEligibility(): Promise<NewUserEligibility | null
   }
 }
 
+// ---- Blog comments (backend blog-comment module; moderated) ---------------------
+
+export type BlogComment = {
+  id: string
+  parent_id: string | null
+  display_name: string
+  body: string
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string | null
+  is_mine: boolean
+  replies?: BlogComment[]
+}
+// Approved comments, threaded. With a customer token the reader's own pending/rejected
+// ones are included too (is_mine + status), so they can see "awaiting review".
+export async function listBlogComments(slug: string) {
+  return storeFetch<{ comments: BlogComment[]; count: number }>(`/store/blog/${encodeURIComponent(slug)}/comments`)
+}
+// Always stored as pending; an admin approves it in Medusa Admin before anyone else sees it.
+export async function postBlogComment(slug: string, body: string, parent_id?: string) {
+  const data = await storeFetch<{ comment: BlogComment }>(`/store/blog/${encodeURIComponent(slug)}/comments`, {
+    method: 'POST',
+    body: { body, parent_id: parent_id ?? null },
+  })
+  return data.comment
+}
+
 // ---- Orders ---------------------------------------------------------------------
 
 // `*fulfillments(.items|.labels)` = which items shipped in which box, with tracking. The
