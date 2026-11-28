@@ -31,8 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await getMe(t)
       setCustomer(me)
-      // Wake the design services in the background so My Designs is quick.
-      fetch('/api/designs/warm', { cache: 'no-store' }).catch(() => {})
       return me
     } catch (e: any) {
       if (e?.status === 401) {

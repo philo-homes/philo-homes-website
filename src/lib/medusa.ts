@@ -497,10 +497,10 @@ export async function ensureCart(customer: Customer | null): Promise<Cart> {
   return cart
 }
 
-export async function addLineItem(cartId: string, variantId: string, quantity = 1): Promise<Cart> {
+export async function addLineItem(cartId: string, variantId: string, quantity = 1, metadata?: Record<string, unknown>): Promise<Cart> {
   const data = await storeFetch<{ cart: Cart }>(`/store/carts/${cartId}/line-items`, {
     method: 'POST',
-    body: { variant_id: variantId, quantity },
+    body: { variant_id: variantId, quantity, ...(metadata ? { metadata } : {}) },
   })
   return data.cart
 }
