@@ -1,58 +1,155 @@
 'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useParams } from 'next/navigation'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, RotateCcw, RotateCw, Trash2 } from 'lucide-react'
 import { toast } from '@/components/Toast'
 import Shell from '@/components/Shell'
 import { Button } from '@/components/Section'
 import { useAuth } from '@/context/AuthContext'
 import { useCart } from '@/context/CartContext'
-import type { SceneJson } from '@/lib/designs'
-import { catalog, DesignEdit, Product, productImage, productPrice, readDesignEdits, resolveSku, writeDesignEdit } from '@/lib/medusa'
+import type { CatalogItem, FurnitureItem, RoomFurniturePiece, SceneJson } from '@/lib/designs'
+import { Product, productImage, productPrice, resolveSku } from '@/lib/medusa'
 import { formatPrice } from '@/lib/format'
-import { toScene, type PlacedItem, type RoomFrame } from '@/components/DesignViewer'
+import type { AppViewerHandle, ViewerEvent, ViewerSceneData, ViewerSceneExport } from '@/components/AppViewer'
 
-// three.js only runs in the browser
-const DesignViewer = dynamic(() => import('@/components/DesignViewer'), { ssr: false, loading: () => <div className="w-full aspect-[16/10] bg-[#1b1f2a]" /> })
+// The app's viewer runs in an iframe; nothing of it renders on the server.
+const AppViewer = dynamic(() => import('@/components/AppViewer'), { ssr: false, loading: () => <div className="w-full aspect-[16/10] bg-[#f5f5f5]" /> })
 
 // GET /api/designs/:designId — a rooms-API design (the app's Rooms) with its scene.
 type Payload = {
   design_id: string
   status: string
+  version: number
+  render_running: boolean
   name: string | null
   design_type: string
   design_style: string | null
   error: string | null
   render_urls: string[]
   scene: SceneJson | null
+  room_furniture: RoomFurniturePiece[]
   room: { room_id: string; name: string | null; room_type: string; room_length: number | null; room_width: number | null } | null
 }
+
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+// The app's roomTypeLabel, which it also uses for the room's own pieces ("Bed0_World" -> "Bed0 World").
+const pieceLabel = (s: string) => {
+  const words = s.replace(/[-_]+/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+const TYPE_LABEL: Record<string, string> = { whole_room: 'Whole room', single_item: 'One piece', manual: 'Arranged by you' }
+// The app's left-hand tools (RoomDesignParts ROTATIONS).
+const ROTATIONS = [
+  [-90, 'Turn left 90°'],
+  [-15, 'Turn left 15°'],
+  [15, 'Turn right 15°'],
+  [90, 'Turn right 90°'],
+] as const
+// Viewer ids are '<sku>', '<sku>#2' (a second copy) or '<sku>#w3' (added here).
+const skuOf = (viewerId: string) => viewerId.replace(/#.*$/, '')
+const chip = (on = false) => `shadow px-3 py-1.5 text-xs rounded-full ${on ? 'bg-[#10182B] text-white' : 'bg-white/95 text-[#1F1F1F]'}`
+
+/**
+ * scene.json in the viewer, as the app's loadDesignScene builds it: unique
+ * viewer ids for repeated skus, itemIndex mapping them back, positions in
+ * metres (pipeline frame, Z-up).
+ */
+function viewerScene(scene: SceneJson) {
+  const seen: Record<string, number> = {}
+  const itemIndex: Record<string, number> = {}
+  const items: Array<FurnitureItem & { viewerId: string }> = []
+  ;(scene.furnitureUrls ?? []).forEach((f, i) => {
+    if (!Array.isArray(f.position) || f.position.length !== 3) return
+    seen[f.id] = (seen[f.id] ?? 0) + 1
+    const viewerId = seen[f.id] === 1 ? f.id : `${f.id}#${seen[f.id]}`
+    itemIndex[viewerId] = i
+    items.push({ ...f, viewerId })
+  })
+  const sceneData: ViewerSceneData = {
+    environment: 'studio',
+    frame: 'pipeline',
+    items: [
+      {
+        id: 'room',
+        name: 'room.glb',
+        url: scene.roomUrl as string,
+        lit: true,
+        zUp: true,
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        hiddenNodes: (scene.hiddenRoomNodes ?? []).filter((n) => Number.isInteger(n) && n >= 0),
+      },
+      ...items.map((f) => ({
+        id: f.viewerId,
+        name: `${f.id}.glb`,
+        url: f.url,
+        position: f.position.map((n) => n / 100),
+        rotation: Array.isArray(f.rotation) ? f.rotation : [0, 0, 0],
+        scale: Array.isArray(f.scale) ? f.scale : [1, 1, 1],
+      })),
+    ],
+  }
+  return { sceneData, items, itemIndex }
+}
+
+/** The app's sceneJsonFromExport: metadata carried over for pieces already there; new ones are source: manual. */
+function sceneFromExport(exp: ViewerSceneExport, base: SceneJson, itemIndex: Record<string, number>, added: Record<string, CatalogItem>) {
+  return {
+    hiddenRoomNodes: exp.hiddenRoomNodes,
+    furnitureUrls: exp.items.map((it) => {
+      const idx = itemIndex[it.id]
+      const was = idx != null ? base.furnitureUrls[idx] : undefined
+      const c = added[it.id]
+      return {
+        ...(was ?? { source: 'manual', name: c?.name, price: c?.price ?? null, originalPrice: c?.original_price ?? null, image: c?.image_url ?? null }),
+        id: skuOf(it.id),
+        url: it.url,
+        position: it.position,
+        rotation: it.rotation,
+        // Catalog GLBs are true size; the backend takes only [1, 1, 1].
+        scale: [1, 1, 1],
+        ...(it.replaces ? { replaces: { sku: skuOf(it.replaces) } } : {}),
+      }
+    }),
+  }
+}
 
 export default function DesignDetailPage() {
-  const { designId: taskId } = useParams<{ designId: string }>()
-  const { customer, token, loading, refresh } = useAuth()
+  const { designId } = useParams<{ designId: string }>()
+  const { customer, token, loading } = useAuth()
   const { add, busy } = useCart()
+  const viewer = useRef<AppViewerHandle>(null)
   const [data, setData] = useState<Payload | null>(null)
   const [error, setError] = useState('')
+  const [load, setLoad] = useState(0) // bump to reload the design (Discard, after a save)
   const [products, setProducts] = useState<Record<string, Product | null>>({})
-  const [edit, setEdit] = useState<DesignEdit>({ removed: [], added: [] })
-  const [picker, setPicker] = useState(false)
-  const [pickerQ, setPickerQ] = useState('')
-  const [all, setAll] = useState<Product[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [renaming, setRenaming] = useState(false)
-  // Where the room actually sits in the scene (rooms are not at the origin):
-  // new furniture is dropped on its floor near the center.
-  const [roomFrame, setRoomFrame] = useState<RoomFrame>({ center: [0, 0, 0], floorY: 0 })
+  // The 3D view, as in the app's design view (useRoomDesigns viewEdit).
+  const [ready, setReady] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [removed, setRemoved] = useState<string[]>([]) // viewer ids of shop pieces deleted
+  const [deletedRoom, setDeletedRoom] = useState<string[]>([]) // 'node:N' of the room's own pieces deleted
+  const [added, setAdded] = useState<Record<string, CatalogItem>>({})
+  const [dirty, setDirty] = useState(false)
+  const dirtyRef = useRef(false)
+  dirtyRef.current = dirty
+  const [canUndo, setCanUndo] = useState(false)
+  const [cut, setCut] = useState({ ceiling: true, walls: false })
+  const [saving, setSaving] = useState(false)
+  const [picker, setPicker] = useState(false)
+  const [pickerQ, setPickerQ] = useState('')
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[] | null>(null)
+  const addSeq = useRef(0)
 
   useEffect(() => {
     if (!token) return
-    fetch(`/api/designs/${taskId}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+    fetch(`/api/designs/${designId}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.message || 'Could not load this design.')
         return r.json()
@@ -62,54 +159,158 @@ export default function DesignDetailPage() {
         setName(d.name ?? '')
       })
       .catch((e) => setError(e.message))
-  }, [taskId, token])
+  }, [designId, token, load])
+
+  const scene = useMemo(() => (data?.scene?.roomUrl ? viewerScene(data.scene) : null), [data])
+  const sceneKey = `${designId}:v${data?.version ?? 0}:${load}`
+
+  // A fresh scene: nothing selected, deleted, added or changed in it yet.
+  useEffect(() => {
+    setReady(false)
+    setSelected(null)
+    setRemoved([])
+    setDeletedRoom([])
+    setAdded({})
+    setDirty(false)
+    setCanUndo(false)
+  }, [sceneKey])
+
+  // Edit mode with the room's own pieces (not those the design took out) as
+  // targets — sent again a little later, as the app does, in case the page
+  // was still settling. Not once something changed: setArrangeTargets starts
+  // arranging afresh (it forgets what was deleted, so Restore would not work).
+  useEffect(() => {
+    if (!ready || !data) return
+    const hidden = data.scene?.hiddenRoomNodes ?? []
+    const list = data.room_furniture.filter((p) => !hidden.includes(p.node)).map((p) => ({ node: p.node }))
+    const send = () => {
+      viewer.current?.setEditMode(true)
+      viewer.current?.setArrangeTargets(list)
+    }
+    send()
+    const timers = [1500, 4000].map((ms) => setTimeout(() => !dirtyRef.current && send(), ms))
+    return () => timers.forEach(clearTimeout)
+  }, [ready, data])
 
   useEffect(() => {
-    if (!customer) return
-    setEdit(readDesignEdits(customer)[taskId] ?? { removed: [], added: [] })
-  }, [customer, taskId])
+    if (ready) viewer.current?.setRoomCut(cut)
+  }, [cut, ready])
 
-  // Match each designed piece (catalog SKU) to its shop product.
+  const onEvent = useCallback((e: ViewerEvent) => {
+    const ev = e as any
+    if (['moved', 'rotated', 'hidden', 'removed', 'restored', 'placed'].includes(ev.type)) setDirty(true)
+    switch (ev.type) {
+      case 'sceneReady':
+        setReady(true)
+        break
+      case 'viewerReset':
+        setReady(false)
+        break
+      case 'selected':
+      case 'placed':
+        setSelected(ev.id ?? null)
+        break
+      case 'confirmed':
+        setSelected(null)
+        break
+      case 'arrangeState':
+        setCanUndo(!!ev.canUndo)
+        break
+      case 'placeFailed':
+        setAdded((prev) => {
+          const next = { ...prev }
+          delete next[ev.id]
+          return next
+        })
+        toast.error('That piece could not be loaded.')
+        break
+      case 'removed':
+      case 'hidden': {
+        const id = ev.id as string
+        setSelected((prev) => (prev === id ? null : prev))
+        if (id.startsWith('node:')) setDeletedRoom((prev) => (prev.includes(id) ? prev : [...prev, id]))
+        else setRemoved((prev) => (prev.includes(id) ? prev : [...prev, id]))
+        break
+      }
+      case 'restored': {
+        const id = ev.id as string
+        setDeletedRoom((prev) => prev.filter((k) => k !== id))
+        setRemoved((prev) => prev.filter((k) => k !== id))
+        break
+      }
+    }
+  }, [])
+
+  // The shop pieces in the room now: the design's, minus deleted, plus added here.
+  const pieces = useMemo(() => {
+    const fromDesign = (scene?.items ?? []).map((f) => ({ viewerId: f.viewerId, sku: f.id, name: f.name, price: f.price ?? null, image: f.image ?? null }))
+    const fromHere = Object.entries(added).map(([viewerId, c]) => ({ viewerId, sku: c.sku, name: c.name, price: c.price, image: c.image_url }))
+    return [...fromDesign, ...fromHere].filter((p) => !removed.includes(p.viewerId))
+  }, [scene, added, removed])
+
+  // Match each piece (catalog sku) to its shop product.
+  const skuKey = Array.from(new Set(pieces.map((p) => p.sku))).sort().join(',')
   useEffect(() => {
-    const items = data?.scene?.furnitureUrls ?? []
-    if (items.length === 0) return
-    Promise.all(items.map(async (f) => [f.id, await resolveSku(f.id)] as const)).then((pairs) => {
-      setProducts(Object.fromEntries(pairs))
+    if (!skuKey) return
+    let live = true
+    Promise.all(skuKey.split(',').map(async (sku) => [sku, await resolveSku(sku)] as const)).then((pairs) => {
+      if (live) setProducts((prev) => ({ ...prev, ...Object.fromEntries(pairs) }))
     })
-  }, [data])
+    return () => {
+      live = false
+    }
+  }, [skuKey])
 
   useEffect(() => {
-    // Also needed to put pieces added on the web into the cart.
-    if ((picker || edit.added.length > 0) && all.length === 0) catalog().then(setAll)
-  }, [picker, edit.added.length, all.length])
+    if (!picker || catalogItems || !token) return
+    const q = data?.room?.room_type ? `?room_type=${encodeURIComponent(data.room.room_type)}` : ''
+    fetch(`/api/catalog${q}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((r) => setCatalogItems(r.items ?? []))
+      .catch(() => setCatalogItems([]))
+  }, [picker, catalogItems, token, data?.room?.room_type])
 
-  const instances = useMemo(
-    () => (data?.scene?.furnitureUrls ?? []).map((item, i) => ({ item, key: `${item.id}#${i}` })),
-    [data],
-  )
+  const placeFromCatalog = (c: CatalogItem) => {
+    const viewerId = `${c.sku}#w${++addSeq.current}`
+    setAdded((prev) => ({ ...prev, [viewerId]: c }))
+    viewer.current?.placeItem({ id: viewerId, url: c.model_3d_url, klass: 'floor' })
+    setPicker(false)
+  }
 
-  const sceneItems: PlacedItem[] = useMemo(() => {
-    const base = instances.filter(({ key }) => !edit.removed.includes(key)).map(({ item, key }) => ({ ...toScene(item), id: key }))
-    const added: PlacedItem[] = edit.added.map((a) => ({ id: a.id, url: a.url ?? '', position: a.position, rotation: [0, 0, 0], scale: [1, 1, 1], label: a.name }))
-    return [...base, ...added].map((it) => ({ ...it, highlight: it.id === selected }))
-  }, [instances, edit, selected])
-
-  const persist = async (next: DesignEdit) => {
-    const previous = edit
-    setEdit(next)
-    if (!customer) return
+  const save = async () => {
+    if (!token || !data?.scene || !scene) return
+    setSaving(true)
     try {
-      await writeDesignEdit(customer, taskId, next)
-      await refresh()
-    } catch {
-      setEdit(previous)
-      toast.error('Could not save that change. Please try again.')
+      viewer.current?.selectItem(null)
+      let exp: ViewerSceneExport
+      try {
+        exp = await viewer.current!.exportScene()
+      } catch {
+        toast.error('The 3D scene could not be read. Please try again.')
+        return
+      }
+      const body = { base_version: data.version, scene: sceneFromExport(exp, data.scene, scene.itemIndex, added) }
+      const r = await fetch(`/api/designs/${designId}/scene`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const res = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        toast.error(res?.message || 'Could not save the design.')
+        return
+      }
+      toast.success('Saved — the app shows this version too.')
+      setLoad((n) => n + 1)
+    } finally {
+      setSaving(false)
     }
   }
+  const discard = () => setLoad((n) => n + 1)
 
   const deleteDesign = async () => {
     if (!token || !window.confirm('Delete this design? This removes it from the app too and cannot be undone.')) return
-    const r = await fetch(`/api/designs/${taskId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+    const r = await fetch(`/api/designs/${designId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
     if (!r.ok) {
       toast.error('Could not delete this design.')
       return
@@ -117,27 +318,12 @@ export default function DesignDetailPage() {
     toast.success('Design deleted')
     window.location.href = '/designs'
   }
-  const removePiece = (id: string) => persist({ ...edit, removed: Array.from(new Set([...edit.removed, id])) })
-  const restorePiece = (id: string) => persist({ ...edit, removed: edit.removed.filter((r) => r !== id) })
-  const addPiece = (p: Product) => {
-    const glb = typeof p.metadata?.model_3d_url === 'string' ? p.metadata.model_3d_url : typeof p.metadata?.glb_url === 'string' ? p.metadata.glb_url : undefined
-    const n = edit.added.length
-    const [cx, , cz] = roomFrame.center
-    persist({
-      ...edit,
-      added: [...edit.added, { id: `web-${Date.now()}`, productId: p.id, name: p.title, image: productImage(p), url: glb, position: [cx + 0.7 * (n % 3) - 0.7, roomFrame.floorY, cz + 0.7 * Math.floor(n / 3)] }],
-    })
-    setPicker(false)
-  }
-  const removeAdded = (id: string) => persist({ ...edit, added: edit.added.filter((a) => a.id !== id) })
-  const nudge = (id: string, dx: number, dz: number) =>
-    persist({ ...edit, added: edit.added.map((a) => (a.id === id ? { ...a, position: [a.position[0] + dx, a.position[1], a.position[2] + dz] } : a)) })
 
   // Renamed in the rooms API, so the app shows the same name.
   const saveName = async () => {
     const next = name.trim()
     if (token && next && next !== (data?.name ?? '')) {
-      const r = await fetch(`/api/designs/${taskId}`, {
+      const r = await fetch(`/api/designs/${designId}`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: next }),
@@ -155,40 +341,38 @@ export default function DesignDetailPage() {
     setRenaming(false)
   }
 
+  const cartLine = (sku: string) => products[sku]?.variants?.[0]?.id
+  const meta = { source: 'design', room_id: data?.room?.room_id, design_id: designId }
   const addAllToCart = async () => {
-    const ids = instances.filter(({ key }) => !edit.removed.includes(key)).map(({ item }) => products[item.id]?.variants?.[0]?.id).filter(Boolean) as string[]
-    const addedIds = edit.added.map((a) => all.find((p) => p.id === a.productId)?.variants?.[0]?.id).filter(Boolean) as string[]
-    let ok = 0
-    const wanted = instances.filter(({ key }) => !edit.removed.includes(key)).length + edit.added.length
-    if (ids.length + addedIds.length === 0) {
-      toast.error(wanted ? "None of these pieces are in the shop yet." : 'This design has no furniture to add.')
+    const variants = pieces.map((p) => cartLine(p.sku)).filter(Boolean) as string[]
+    if (variants.length === 0) {
+      toast.error(pieces.length ? 'None of these pieces are in the shop yet.' : 'This design has no furniture to add.')
       return
     }
-    // Same line metadata as the app's "add all" from a design.
-    const meta = { source: 'design', room_id: data?.room?.room_id, design_id: taskId }
-    for (const v of [...ids, ...addedIds]) if (await add(v, 1, meta)) ok += 1
-    const missing = wanted - ok
+    let ok = 0
+    for (const v of variants) if (await add(v, 1, meta)) ok += 1
+    const missing = pieces.length - ok
     if (ok > 0) toast.success(`${ok} item${ok === 1 ? '' : 's'} added to cart${missing > 0 ? ` · ${missing} not in the shop yet` : ''}`)
   }
 
   if (loading) return <Shell><p className="text-sm">Loading…</p></Shell>
-  if (!customer) return <Shell><p className="text-sm"><Link href={`/login?next=/designs/${taskId}`} className="underline">Sign in</Link> to open this design.</p></Shell>
+  if (!customer) return <Shell><p className="text-sm"><Link href={`/login?next=/designs/${designId}`} className="underline">Sign in</Link> to open this design.</p></Shell>
   if (error) return <Shell><p className="text-sm text-red-600">{error}</p></Shell>
   if (!data) return <Shell wide><div className="w-full aspect-[16/10] bg-[#F5F4F0] animate-pulse" /></Shell>
   if (data.status === 'FAILED') {
     return <Shell><p className="text-sm">This design failed to generate. Try it again from the room in the app.</p></Shell>
   }
-  if (!data.scene?.roomUrl) {
+  if (!scene) {
     const label = data.status === 'COMPLETE' ? 'finishing up' : `still ${data.status.toLowerCase().replace(/_/g, ' ')}`
     return <Shell><p className="text-sm">This design is {label}. Check back in a few minutes.</p></Shell>
   }
 
-  const { scene, room } = data
-  const roomUrl = scene.roomUrl as string
+  const { room } = data
   const roomLabel = room ? room.name || titleCase(room.room_type) : 'Room'
-  const typeLabel = ({ whole_room: 'Whole room', single_item: 'One piece', manual: 'Arranged by you' } as Record<string, string>)[data.design_type] ?? data.design_type
+  const typeLabel = TYPE_LABEL[data.design_type] ?? data.design_type
   const dims = room?.room_length && room?.room_width ? `${(room.room_length / 100).toFixed(1)} × ${(room.room_width / 100).toFixed(1)} m` : null
   const images = data.render_urls ?? []
+  const roomPiece = (key: string) => data.room_furniture.find((p) => `node:${p.node}` === key)
 
   return (
     <Shell wide>
@@ -205,9 +389,7 @@ export default function DesignDetailPage() {
               {data.name || `${roomLabel} · ${data.design_style ?? typeLabel}`}
             </h1>
           )}
-          <p className="text-sm text-[#4B4B4B] mt-1">
-            {[roomLabel, typeLabel, data.design_style, dims].filter(Boolean).join(' · ')} · {instances.length - edit.removed.length + edit.added.length} pieces
-          </p>
+          <p className="text-sm text-[#4B4B4B] mt-1">{[roomLabel, typeLabel, data.design_style, dims].filter(Boolean).join(' · ')} · {pieces.length} pieces</p>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => setPicker(true)}><Plus size={16} className="mr-1" /> Add furniture</Button>
@@ -217,7 +399,40 @@ export default function DesignDetailPage() {
 
       <div className="grid lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8">
-          <DesignViewer roomUrl={roomUrl} hiddenRoomNodes={scene.hiddenRoomNodes ?? []} items={sceneItems} onRoomFrame={setRoomFrame} />
+          <div className="relative">
+            <AppViewer ref={viewer} sceneData={scene.sceneData} sceneKey={sceneKey} onEvent={onEvent} />
+            {ready && (
+              <>
+                {/* Ceiling and walls off/on, top right (as in the app). */}
+                <div className="absolute top-16 right-5 flex gap-2">
+                  <button className={chip(cut.ceiling)} onClick={() => setCut((c) => ({ ...c, ceiling: !c.ceiling }))}>{cut.ceiling ? 'Ceiling off' : 'Ceiling'}</button>
+                  <button className={chip(cut.walls)} onClick={() => setCut((c) => ({ ...c, walls: !c.walls }))}>{cut.walls ? 'Walls off' : 'Walls'}</button>
+                </div>
+                {/* The selected piece: turn it or delete it (tap it again to unselect). */}
+                {selected && (
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+                    {ROTATIONS.map(([deg, label]) => (
+                      <button key={deg} className={`${chip()} flex items-center gap-1`} onClick={() => viewer.current?.rotateItem(deg)} aria-label={label} title={label}>
+                        {deg < 0 ? <RotateCcw size={12} /> : <RotateCw size={12} />} {Math.abs(deg)}°
+                      </button>
+                    ))}
+                    <button className={`${chip()} flex items-center justify-center text-red-600!`} onClick={() => viewer.current?.removeItem(selected)} aria-label="Delete this piece" title="Delete this piece">
+                      <Trash2 size={14} className="text-red-600" />
+                    </button>
+                  </div>
+                )}
+                {dirty && (
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-3 bg-white/95 shadow px-4 py-2 rounded-full text-xs items-center whitespace-nowrap">
+                    {canUndo && <button className="underline" onClick={() => viewer.current?.undoArrange()}>Undo</button>}
+                    <span className="text-[#8E8E8E]">Unsaved changes</span>
+                    <button className="underline" onClick={discard}>Discard</button>
+                    <button disabled={saving} className="bg-[#D1903E] text-white px-3 py-1 rounded-full disabled:opacity-60" onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <p className="text-[11px] text-[#8E8E8E] mt-2">Click a piece to select it, click it again to unselect. Drag a selected piece to move it. Saved changes show up in the app too.</p>
           {images.length > 0 && (
             <div className="grid grid-cols-3 gap-3 mt-4">
               {images.slice(0, 3).map((src, i) => (
@@ -228,54 +443,58 @@ export default function DesignDetailPage() {
           )}
         </div>
         <aside className="lg:col-span-4">
-          <h2 className="text-lg mb-3" style={{ fontFamily: "'Henry Trial', serif" }}>Furniture in this design</h2>
+          <h2 className="text-lg mb-3" style={{ fontFamily: "'Henry Trial', serif" }}>From the shop</h2>
+          {pieces.length === 0 && <p className="text-sm text-[#8E8E8E]">No shop pieces in this design.</p>}
           <ul className="divide-y divide-[#e8e4dc]">
-            {instances.map(({ item: f, key }) => {
-              const p = products[f.id]
-              const removed = edit.removed.includes(key)
+            {pieces.map((f) => {
+              const p = products[f.sku]
+              const img = (p ? productImage(p) : null) || f.image
               return (
-                <li key={key} className={`py-3 flex gap-3 ${removed ? 'opacity-50' : ''}`} onMouseEnter={() => setSelected(key)} onMouseLeave={() => setSelected(null)}>
-                  <div className="w-16 h-16 bg-[#F5F4F0] shrink-0">
-                    {(p ? productImage(p) : f.image) && (
+                <li key={f.viewerId} className={`py-3 flex gap-3 ${selected === f.viewerId ? 'bg-[#FCF9F2] -mx-2 px-2' : ''}`}>
+                  <button className="w-16 h-16 bg-[#F5F4F0] shrink-0" onClick={() => viewer.current?.selectItem(f.viewerId)} title="Select in the 3D view">
+                    {img && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={(p ? productImage(p) : f.image) ?? undefined} alt="" className="w-full h-full object-cover" />
+                      <img src={img} alt="" className="w-full h-full object-cover" />
                     )}
-                  </div>
+                  </button>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">{p?.title ?? f.name ?? f.id}</p>
-                    <p className="text-xs text-[#4B4B4B]">{p ? formatPrice(productPrice(p)) : p === null ? 'Not in catalog' : 'Looking up…'}</p>
+                    <p className="text-sm truncate">
+                      {p?.title ?? f.name ?? f.sku}
+                      {added[f.viewerId] && <span className="ml-1 text-[10px] uppercase tracking-wider text-[#D1903E]">added here</span>}
+                    </p>
+                    <p className="text-xs text-[#4B4B4B]">{p ? formatPrice(productPrice(p)) : p === null ? 'Not in the shop yet' : 'Looking up…'}</p>
                     <div className="flex gap-3 mt-1 text-xs">
                       {p && <Link href={`/shop/${p.handle}`} className="underline">View</Link>}
-                      {p && !removed && <button disabled={busy} onClick={() => p.variants?.[0] && add(p.variants[0].id, 1, { source: 'design', room_id: data.room?.room_id, design_id: taskId })} className="underline">Add to cart</button>}
-                      {removed ? <button onClick={() => restorePiece(key)} className="underline">Put back</button> : <button onClick={() => removePiece(key)} className="text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Remove</button>}
+                      {p && <button disabled={busy} onClick={() => { const v = cartLine(f.sku); if (v) add(v, 1, meta) }} className="underline">Add to cart</button>}
+                      <button onClick={() => viewer.current?.removeItem(f.viewerId)} className="text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Remove</button>
                     </div>
                   </div>
                 </li>
               )
             })}
-            {edit.added.map((a) => (
-              <li key={a.id} className="py-3 flex gap-3 bg-[#FCF9F2] -mx-2 px-2" onMouseEnter={() => setSelected(a.id)} onMouseLeave={() => setSelected(null)}>
-                <div className="w-16 h-16 bg-[#F5F4F0] shrink-0">
-                  {a.image && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={a.image} alt="" className="w-full h-full object-cover" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate">{a.name} <span className="text-[10px] uppercase tracking-wider text-[#D1903E]">added here</span></p>
-                  <div className="flex items-center gap-1 mt-1 text-xs">
-                    <span className="text-[#8E8E8E] mr-1">Move:</span>
-                    <button onClick={() => nudge(a.id, -0.25, 0)} className="border px-1.5">←</button>
-                    <button onClick={() => nudge(a.id, 0.25, 0)} className="border px-1.5">→</button>
-                    <button onClick={() => nudge(a.id, 0, -0.25)} className="border px-1.5">↑</button>
-                    <button onClick={() => nudge(a.id, 0, 0.25)} className="border px-1.5">↓</button>
-                    <button onClick={() => removeAdded(a.id)} className="ml-2 text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Remove</button>
-                  </div>
-                </div>
-              </li>
-            ))}
           </ul>
-          <p className="text-[11px] text-[#8E8E8E] mt-4">Pieces you remove or add here are saved to your account on this website; the app still shows the design as it was made.</p>
+          {deletedRoom.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm mb-2">Deleted from the real room</h3>
+              <ul className="divide-y divide-[#e8e4dc]">
+                {deletedRoom.map((key) => {
+                  const rp = roomPiece(key)
+                  return (
+                    <li key={key} className="py-2 flex items-center gap-3 text-sm">
+                      <div className="w-10 h-10 bg-[#F5F4F0] shrink-0">
+                        {rp?.image_url && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={rp.image_url} alt="" className="w-full h-full object-cover" />
+                        )}
+                      </div>
+                      <span className="flex-1 truncate">{rp ? pieceLabel(rp.name || rp.category) : key}</span>
+                      <button className="underline text-xs" onClick={() => viewer.current?.restoreDeleted(key)}>Restore</button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
           <button onClick={deleteDesign} className="mt-6 text-xs text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Delete this design</button>
         </aside>
       </div>
@@ -288,20 +507,26 @@ export default function DesignDetailPage() {
               <button onClick={() => setPicker(false)} className="text-sm underline">Close</button>
             </div>
             <input value={pickerQ} onChange={(e) => setPickerQ(e.target.value)} placeholder="Search the catalog…" className="w-full border border-[#e1e1e1] px-3 py-2 text-sm mb-4" />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {all.filter((p) => !pickerQ || p.title.toLowerCase().includes(pickerQ.toLowerCase())).map((p) => (
-                <button key={p.id} onClick={() => addPiece(p)} className="text-left group">
-                  <div className="aspect-square bg-[#F5F4F0] overflow-hidden">
-                    {productImage(p) && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={productImage(p)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                    )}
-                  </div>
-                  <p className="text-sm mt-1 truncate">{p.title}</p>
-                  <p className="text-xs text-[#4B4B4B]">{formatPrice(productPrice(p))}</p>
-                </button>
-              ))}
-            </div>
+            {catalogItems === null ? (
+              <p className="text-sm text-[#8E8E8E]">Loading…</p>
+            ) : catalogItems.length === 0 ? (
+              <p className="text-sm text-[#8E8E8E]">No pieces with a 3D model for this room yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {catalogItems.filter((c) => !pickerQ || c.name.toLowerCase().includes(pickerQ.toLowerCase())).map((c) => (
+                  <button key={c.sku} onClick={() => placeFromCatalog(c)} className="text-left group">
+                    <div className="aspect-square bg-[#F5F4F0] overflow-hidden">
+                      {c.image_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      )}
+                    </div>
+                    <p className="text-sm mt-1 truncate">{c.name}</p>
+                    <p className="text-xs text-[#4B4B4B]">{c.price != null ? formatPrice(c.price) : ''}</p>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

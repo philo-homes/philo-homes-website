@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
-import { deleteDesign, designStyle, getDesign, getRoom, PipelineError, renameDesign } from '@/lib/designs'
+import { deleteDesign, designStyle, getCapture, getDesign, getRoom, PipelineError, renameDesign } from '@/lib/designs'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,12 +21,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ designId: s
   try {
     const design = await getDesign(token, designId)
     if (design.status === 'DELETED') return NextResponse.json({ message: 'Design not found.' }, { status: 404 })
-    const room = await getRoom(token, design.room_id).catch(() => null)
+    const [room, capture] = await Promise.all([
+      getRoom(token, design.room_id).catch(() => null),
+      getCapture(token, design.task_id).catch(() => null),
+    ])
     // The capture the design was made on (a rescan may have replaced it since).
     const cap = room?.captures?.find((c) => c.task_id === design.task_id) ?? (room?.current_capture?.task_id === design.task_id ? room.current_capture : null)
     return NextResponse.json({
       design_id: design.design_id,
       status: design.status,
+      version: design.version ?? 0,
+      render_running: design.render_status === 'RUNNING',
+      // The room's own pieces (GLB nodes): selectable, movable and deletable in the viewer.
+      room_furniture: capture?.room_furniture ?? [],
       name: design.name,
       design_type: design.design_type,
       design_style: designStyle(design),

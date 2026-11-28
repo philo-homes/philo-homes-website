@@ -18,6 +18,9 @@ export type FurnitureItem = {
 }
 export type SceneJson = { roomUrl: string | null; furnitureUrls: FurnitureItem[]; hiddenRoomNodes?: number[] }
 
+/** One piece the room came with (the capture's room/furniture.json). */
+export type RoomFurniturePiece = { node: number; name: string; category: string; group: string; image_url: string | null }
+
 export type CaptureSummary = {
   task_id: string
   status: string
@@ -52,10 +55,24 @@ export type Design = {
   thumbnail_url: string | null
   scene?: SceneJson | null
   error_info: string | null
+  /** scene.json's version; every save sends it back as base_version. */
+  version?: number
+  render_status?: string | null
+}
+
+/** GET /v1/catalog/furniture: shop items with a 3D model, for placing by hand. */
+export type CatalogItem = {
+  sku: string
+  name: string
+  category: string
+  price: number | null
+  original_price: number | null
+  image_url: string | null
+  model_3d_url: string
 }
 
 export class PipelineError extends Error {
-  constructor(message: string, public status: number) {
+  constructor(message: string, public status: number, public body = '') {
     super(message)
   }
 }
@@ -82,7 +99,7 @@ export async function customerFromToken(token: string | null): Promise<{ id: str
   return data.customer ?? null
 }
 
-async function call<T>(token: string, method: 'GET' | 'PATCH' | 'DELETE', path: string, body?: unknown, ms = 30000): Promise<T> {
+async function call<T>(token: string, method: 'GET' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown, ms = 30000): Promise<T> {
   const res = await withTimeout(`${PIPELINE_API}${path}`, ms, {
     method,
     headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
@@ -91,7 +108,7 @@ async function call<T>(token: string, method: 'GET' | 'PATCH' | 'DELETE', path: 
   const text = await res.text()
   if (!res.ok) {
     console.warn('[rooms-api]', method, path, res.status, text.slice(0, 300))
-    throw new PipelineError(`${method} ${path} failed: ${res.status}`, res.status)
+    throw new PipelineError(`${method} ${path} failed: ${res.status}`, res.status, text)
   }
   return (text ? JSON.parse(text) : {}) as T
 }
@@ -109,6 +126,19 @@ export const listDesigns = (token: string, taskId: string) =>
 
 /** One design; its `scene` is scene.json with roomUrl signed. */
 export const getDesign = (token: string, designId: string) => call<Design>(token, 'GET', `/v1/designs/${enc(designId)}`)
+
+/** GET /v1/captures/{task_id}: room_furniture is the room's own pieces (null until prepared). */
+export const getCapture = (token: string, taskId: string) =>
+  call<CaptureSummary & { room_furniture: RoomFurniturePiece[] | null }>(token, 'GET', `/v1/captures/${enc(taskId)}`, undefined, 15000)
+
+/** PUT /v1/designs/{id}/scene: the design's next version. 409 when base_version is stale. */
+export const putScene = (token: string, designId: string, baseVersion: number, scene: Pick<SceneJson, 'furnitureUrls' | 'hiddenRoomNodes'>) =>
+  call<Design>(token, 'PUT', `/v1/designs/${enc(designId)}/scene`, { base_version: baseVersion, scene })
+
+export const listCatalog = (token: string, params: { q?: string; room_type?: string; limit?: number }) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])).toString()
+  return call<{ items: CatalogItem[]; total: number }>(token, 'GET', `/v1/catalog/furniture${qs ? `?${qs}` : ''}`)
+}
 
 export const renameDesign = (token: string, designId: string, name: string) =>
   call<Design>(token, 'PATCH', `/v1/designs/${enc(designId)}`, { name })
