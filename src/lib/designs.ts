@@ -1,35 +1,64 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Server-side helpers for the AI design pipeline APIs (Cloud Run). Never
-// imported by client components — see src/app/api/designs/*.
-import { MEDUSA_PUBLISHABLE_KEY, MEDUSA_URL, TASK_RESULT_API, TASK_STATUS_API } from './config'
+// Server-side helpers for the pipeline v2 rooms API (the same API the app uses
+// for Rooms and designs). Never imported by client components — see
+// src/app/api/designs/*. Every call forwards the customer's Medusa token; the
+// API checks that the caller owns the user, room or design in the path.
+import { MEDUSA_PUBLISHABLE_KEY, MEDUSA_URL, PIPELINE_API } from './config'
 
-export type TaskSummary = { task_id: string; timestamp: string }
-export type TaskStatus =
-  | 'CREATED' | 'INPUT_UPLOADED' | 'PROCESSING' | 'VIDEO_PROCESSING_RUNNING' | 'VIDEO_PROCESSING_COMPLETE'
-  | 'AI_DESIGN_RUNNING' | 'AI_DESIGN_COMPLETE' | 'RENDER_RUNNING' | 'COMPLETE' | 'FAILED' | 'DELETED' | string
-
-export type TaskResult = {
-  task_id: string
-  status: TaskStatus
-  room_type?: string
-  design_style?: string
-  room_length?: number
-  room_width?: number
-  room_height?: number
-  artifacts: { furniture_data: string; room_glb: string; images: string[] } | null
-}
-
+/** One piece in a design's scene.json (catalog sku; centimetres, pipeline frame, Z-up). */
 export type FurnitureItem = {
   id: string
   name?: string
-  price?: number
-  photo_url?: string
+  price?: number | null
+  image?: string | null
   url: string
   position: number[]
   rotation: number[]
   scale: number[]
 }
-export type FurnitureData = { roomUrl?: string; furnitureUrls: FurnitureItem[] }
+export type SceneJson = { roomUrl: string | null; furnitureUrls: FurnitureItem[]; hiddenRoomNodes?: number[] }
+
+export type CaptureSummary = {
+  task_id: string
+  status: string
+  room_glb: string | null
+  room_length: number | null
+  room_width: number | null
+  room_height: number | null
+}
+export type RoomRecord = {
+  room_id: string
+  room_type: string
+  name: string | null
+  created_at: string
+  cover_url: string | null
+  current_capture: CaptureSummary | null
+  design_count: number
+  /** GET /v1/rooms/{id} only: every capture, newest first. */
+  captures?: CaptureSummary[]
+}
+export type Design = {
+  design_id: string
+  task_id: string
+  room_id: string
+  design_type: 'whole_room' | 'single_item' | 'manual' | string
+  status: 'DRAFT' | 'PREPARING' | 'RUNNING' | 'COMPLETE' | 'FAILED' | 'DELETED' | string
+  name: string | null
+  request: Record<string, any> | null
+  created_at: string
+  completed_at: string | null
+  scene_url: string | null
+  render_urls: string[] | null
+  thumbnail_url: string | null
+  scene?: SceneJson | null
+  error_info: string | null
+}
+
+export class PipelineError extends Error {
+  constructor(message: string, public status: number) {
+    super(message)
+  }
+}
 
 const withTimeout = async (url: string, ms: number, init?: RequestInit) => {
   const c = new AbortController()
@@ -41,8 +70,8 @@ const withTimeout = async (url: string, ms: number, init?: RequestInit) => {
   }
 }
 
-// Who is calling? Resolve the bearer token to a Medusa customer so a user can
-// only ever list THEIR tasks (the pipeline API itself is keyed by user id only).
+// Who is calling? Resolve the bearer token to a Medusa customer: the rooms API
+// is keyed by the Medusa customer id.
 export async function customerFromToken(token: string | null): Promise<{ id: string; email: string; metadata?: Record<string, any> | null } | null> {
   if (!token) return null
   const res = await withTimeout(`${MEDUSA_URL}/store/customers/me`, 15000, {
@@ -53,64 +82,44 @@ export async function customerFromToken(token: string | null): Promise<{ id: str
   return data.customer ?? null
 }
 
-export async function listUserTasks(userId: string): Promise<TaskSummary[]> {
-  const res = await withTimeout(`${TASK_STATUS_API}/v1/tasks/${encodeURIComponent(userId)}`, COLD_START_MS)
-  if (res.status === 404) return []
-  if (!res.ok) throw new Error(`task list failed: ${res.status}`)
-  const data = await res.json()
-  return Array.isArray(data?.tasks) ? data.tasks : []
-}
-
-// Cloud Run services cold-start in 12–17s; every timeout below must outlast that.
-const COLD_START_MS = 45000
-
-export async function readStatus(taskId: string): Promise<TaskStatus | null> {
-  try {
-    const res = await withTimeout(`${TASK_STATUS_API}/v1/tasks/${encodeURIComponent(taskId)}/status`, COLD_START_MS)
-    if (!res.ok) return null
-    const data = await res.json()
-    return data?.status ?? null
-  } catch {
-    return null
+async function call<T>(token: string, method: 'GET' | 'PATCH' | 'DELETE', path: string, body?: unknown, ms = 30000): Promise<T> {
+  const res = await withTimeout(`${PIPELINE_API}${path}`, ms, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    console.warn('[rooms-api]', method, path, res.status, text.slice(0, 300))
+    throw new PipelineError(`${method} ${path} failed: ${res.status}`, res.status)
   }
+  return (text ? JSON.parse(text) : {}) as T
 }
 
-export async function getResult(taskId: string): Promise<TaskResult | null> {
-  const res = await withTimeout(`${TASK_RESULT_API}/v1/tasks/${encodeURIComponent(taskId)}/result`, COLD_START_MS)
-  if (!res.ok) return null
-  return res.json()
-}
+const enc = encodeURIComponent
 
-// Status with a fallback: if the status service is unreachable, the result
-// service also reports the task's status.
-export async function resolveStatus(taskId: string): Promise<{ status: TaskStatus; result: TaskResult | null }> {
-  const status = await readStatus(taskId)
-  if (status && status !== 'COMPLETE') return { status, result: null }
-  const result = await getResult(taskId).catch(() => null)
-  if (result?.status) return { status: result.status, result }
-  return { status: status ?? 'UNKNOWN', result }
-}
+export const listRooms = (token: string, userId: string) =>
+  call<{ rooms: RoomRecord[] }>(token, 'GET', `/v1/users/${enc(userId)}/rooms`).then((r) => r.rooms ?? [])
 
-// Wake both services so the first real request doesn't eat the cold start.
-export async function warmUp(): Promise<void> {
-  await Promise.allSettled([
-    withTimeout(`${TASK_STATUS_API}/`, COLD_START_MS).catch(() => null),
-    withTimeout(`${TASK_RESULT_API}/`, COLD_START_MS).catch(() => null),
-  ])
-}
+export const getRoom = (token: string, roomId: string) => call<RoomRecord>(token, 'GET', `/v1/rooms/${enc(roomId)}`)
 
-export async function fetchFurnitureData(signedUrl: string): Promise<FurnitureData | null> {
-  try {
-    const res = await withTimeout(signedUrl, 15000)
-    if (!res.ok) return null
-    const data = await res.json()
-    return { roomUrl: data.roomUrl, furnitureUrls: Array.isArray(data.furnitureUrls) ? data.furnitureUrls : [] }
-  } catch {
-    return null
-  }
-}
+/** Designs on one capture (a room's current one), newest first. */
+export const listDesigns = (token: string, taskId: string) =>
+  call<{ designs: Design[] }>(token, 'GET', `/v1/captures/${enc(taskId)}/designs`, undefined, 60000).then((r) => r.designs ?? [])
 
-export async function deleteTask(taskId: string): Promise<boolean> {
-  const res = await withTimeout(`${TASK_STATUS_API}/v1/tasks/${encodeURIComponent(taskId)}/delete`, 30000, { method: 'POST' })
-  return res.ok
+/** One design; its `scene` is scene.json with roomUrl signed. */
+export const getDesign = (token: string, designId: string) => call<Design>(token, 'GET', `/v1/designs/${enc(designId)}`)
+
+export const renameDesign = (token: string, designId: string, name: string) =>
+  call<Design>(token, 'PATCH', `/v1/designs/${enc(designId)}`, { name })
+
+export const deleteDesign = (token: string, designId: string) => call<unknown>(token, 'DELETE', `/v1/designs/${enc(designId)}`)
+
+/** A design's preview: the customer's own thumbnail, else its first render. */
+export const designPreview = (d: Design) => d.thumbnail_url || d.render_urls?.[0] || null
+
+/** A whole-room design's style: a theme name, or the customer's own photo. */
+export function designStyle(d: Design): string | null {
+  if (d.request?.style?.type === 'custom') return 'Your style'
+  return typeof d.request?.design_style === 'string' ? d.request.design_style : null
 }

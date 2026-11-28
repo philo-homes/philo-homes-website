@@ -10,7 +10,8 @@ type CartState = {
   cart: Cart | null
   count: number
   busy: boolean
-  add: (variantId: string, quantity?: number) => Promise<boolean>
+  /** metadata: e.g. { source: 'design', room_id, design_id }, as the app sets from a design. */
+  add: (variantId: string, quantity?: number, metadata?: Record<string, unknown>) => Promise<boolean>
   update: (lineId: string, quantity: number) => Promise<void>
   remove: (lineId: string) => Promise<void>
   refresh: () => Promise<void>
@@ -42,11 +43,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!authLoading) refresh()
   }, [authLoading, refresh])
 
-  const add = useCallback(async (variantId: string, quantity = 1) => {
+  const add = useCallback(async (variantId: string, quantity = 1, metadata?: Record<string, unknown>) => {
     setBusy(true)
     try {
       const c = cart ?? (await ensureCart(customer))
-      setCart(await addLineItem(c.id, variantId, quantity))
+      setCart(await addLineItem(c.id, variantId, quantity, metadata))
       toast.success('Added to cart')
       return true
     } catch (e: any) {

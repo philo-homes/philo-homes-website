@@ -10,18 +10,30 @@ import Shell from '@/components/Shell'
 import { Button } from '@/components/Section'
 import { useAuth } from '@/context/AuthContext'
 import { useCart } from '@/context/CartContext'
-import type { FurnitureData, TaskResult } from '@/lib/designs'
-import { catalog, DesignEdit, Product, productImage, productPrice, readDesignEdits, readDesignNames, resolveSku, writeDesignEdit, writeDesignName } from '@/lib/medusa'
+import type { SceneJson } from '@/lib/designs'
+import { catalog, DesignEdit, Product, productImage, productPrice, readDesignEdits, resolveSku, writeDesignEdit } from '@/lib/medusa'
 import { formatPrice } from '@/lib/format'
 import { toScene, type PlacedItem, type RoomFrame } from '@/components/DesignViewer'
 
 // three.js only runs in the browser
 const DesignViewer = dynamic(() => import('@/components/DesignViewer'), { ssr: false, loading: () => <div className="w-full aspect-[16/10] bg-[#1b1f2a]" /> })
 
-type Payload = { task_id: string; status: string; result: TaskResult | null; furniture: FurnitureData | null }
+// GET /api/designs/:designId — a rooms-API design (the app's Rooms) with its scene.
+type Payload = {
+  design_id: string
+  status: string
+  name: string | null
+  design_type: string
+  design_style: string | null
+  error: string | null
+  render_urls: string[]
+  scene: SceneJson | null
+  room: { room_id: string; name: string | null; room_type: string; room_length: number | null; room_width: number | null } | null
+}
+const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 export default function DesignDetailPage() {
-  const { taskId } = useParams<{ taskId: string }>()
+  const { designId: taskId } = useParams<{ designId: string }>()
   const { customer, token, loading, refresh } = useAuth()
   const { add, busy } = useCart()
   const [data, setData] = useState<Payload | null>(null)
@@ -45,19 +57,21 @@ export default function DesignDetailPage() {
         if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.message || 'Could not load this design.')
         return r.json()
       })
-      .then(setData)
+      .then((d: Payload) => {
+        setData(d)
+        setName(d.name ?? '')
+      })
       .catch((e) => setError(e.message))
   }, [taskId, token])
 
   useEffect(() => {
     if (!customer) return
     setEdit(readDesignEdits(customer)[taskId] ?? { removed: [], added: [] })
-    setName(readDesignNames(customer)[taskId] ?? '')
   }, [customer, taskId])
 
   // Match each designed piece (catalog SKU) to its shop product.
   useEffect(() => {
-    const items = data?.furniture?.furnitureUrls ?? []
+    const items = data?.scene?.furnitureUrls ?? []
     if (items.length === 0) return
     Promise.all(items.map(async (f) => [f.id, await resolveSku(f.id)] as const)).then((pairs) => {
       setProducts(Object.fromEntries(pairs))
@@ -65,11 +79,12 @@ export default function DesignDetailPage() {
   }, [data])
 
   useEffect(() => {
-    if (picker && all.length === 0) catalog().then(setAll)
-  }, [picker, all.length])
+    // Also needed to put pieces added on the web into the cart.
+    if ((picker || edit.added.length > 0) && all.length === 0) catalog().then(setAll)
+  }, [picker, edit.added.length, all.length])
 
   const instances = useMemo(
-    () => (data?.furniture?.furnitureUrls ?? []).map((item, i) => ({ item, key: `${item.id}#${i}` })),
+    () => (data?.scene?.furnitureUrls ?? []).map((item, i) => ({ item, key: `${item.id}#${i}` })),
     [data],
   )
 
@@ -118,14 +133,24 @@ export default function DesignDetailPage() {
   const nudge = (id: string, dx: number, dz: number) =>
     persist({ ...edit, added: edit.added.map((a) => (a.id === id ? { ...a, position: [a.position[0] + dx, a.position[1], a.position[2] + dz] } : a)) })
 
+  // Renamed in the rooms API, so the app shows the same name.
   const saveName = async () => {
-    if (customer && name.trim()) {
-      try {
-        await writeDesignName(customer, taskId, name.trim())
-        await refresh()
-      } catch {
-        toast.error('Could not save the name.')
+    const next = name.trim()
+    if (token && next && next !== (data?.name ?? '')) {
+      const r = await fetch(`/api/designs/${taskId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: next }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        toast.error(body?.message || 'Could not save the name.')
+        return
       }
+      setData((d) => (d ? { ...d, name: body.name ?? next } : d))
+      setName(body.name ?? next)
+    } else {
+      setName(data?.name ?? '')
     }
     setRenaming(false)
   }
@@ -134,8 +159,16 @@ export default function DesignDetailPage() {
     const ids = instances.filter(({ key }) => !edit.removed.includes(key)).map(({ item }) => products[item.id]?.variants?.[0]?.id).filter(Boolean) as string[]
     const addedIds = edit.added.map((a) => all.find((p) => p.id === a.productId)?.variants?.[0]?.id).filter(Boolean) as string[]
     let ok = 0
-    for (const v of [...ids, ...addedIds]) if (await add(v, 1)) ok += 1
-    if (ok > 0) toast.success(`${ok} item${ok === 1 ? '' : 's'} added to cart`)
+    const wanted = instances.filter(({ key }) => !edit.removed.includes(key)).length + edit.added.length
+    if (ids.length + addedIds.length === 0) {
+      toast.error(wanted ? "None of these pieces are in the shop yet." : 'This design has no furniture to add.')
+      return
+    }
+    // Same line metadata as the app's "add all" from a design.
+    const meta = { source: 'design', room_id: data?.room?.room_id, design_id: taskId }
+    for (const v of [...ids, ...addedIds]) if (await add(v, 1, meta)) ok += 1
+    const missing = wanted - ok
+    if (ok > 0) toast.success(`${ok} item${ok === 1 ? '' : 's'} added to cart${missing > 0 ? ` · ${missing} not in the shop yet` : ''}`)
   }
 
   if (loading) return <Shell><p className="text-sm">Loading…</p></Shell>
@@ -143,21 +176,23 @@ export default function DesignDetailPage() {
   if (error) return <Shell><p className="text-sm text-red-600">{error}</p></Shell>
   if (!data) return <Shell wide><div className="w-full aspect-[16/10] bg-[#F5F4F0] animate-pulse" /></Shell>
   if (data.status === 'FAILED') {
-    return <Shell><p className="text-sm">This design failed to generate. Try scanning the room again in the app.</p></Shell>
+    return <Shell><p className="text-sm">This design failed to generate. Try it again from the room in the app.</p></Shell>
   }
-  if (data.status !== 'COMPLETE' || !data.result?.artifacts) {
+  if (!data.scene?.roomUrl) {
     const label = data.status === 'COMPLETE' ? 'finishing up' : `still ${data.status.toLowerCase().replace(/_/g, ' ')}`
     return <Shell><p className="text-sm">This design is {label}. Check back in a few minutes.</p></Shell>
   }
 
-  const { result } = data
-  const artifacts = result.artifacts
-  if (!artifacts) return null
-  const dims = result.room_length && result.room_width ? `${(result.room_length / 100).toFixed(1)} × ${(result.room_width / 100).toFixed(1)} m` : null
+  const { scene, room } = data
+  const roomUrl = scene.roomUrl as string
+  const roomLabel = room ? room.name || titleCase(room.room_type) : 'Room'
+  const typeLabel = ({ whole_room: 'Whole room', single_item: 'One piece', manual: 'Arranged by you' } as Record<string, string>)[data.design_type] ?? data.design_type
+  const dims = room?.room_length && room?.room_width ? `${(room.room_length / 100).toFixed(1)} × ${(room.room_width / 100).toFixed(1)} m` : null
+  const images = data.render_urls ?? []
 
   return (
     <Shell wide>
-      <p className="text-xs text-[#8E8E8E] mb-4"><Link href="/designs">My Designs</Link> / {name || taskId}</p>
+      <p className="text-xs text-[#8E8E8E] mb-4"><Link href="/designs">My Designs</Link> / {data.name || roomLabel}</p>
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
           {renaming ? (
@@ -167,11 +202,11 @@ export default function DesignDetailPage() {
             </div>
           ) : (
             <h1 className="text-3xl cursor-text" style={{ fontFamily: "'Henry Trial', serif" }} onClick={() => setRenaming(true)} title="Click to rename">
-              {name || `${result.room_type ?? 'Room'} · ${result.design_style ?? 'design'}`}
+              {data.name || `${roomLabel} · ${data.design_style ?? typeLabel}`}
             </h1>
           )}
           <p className="text-sm text-[#4B4B4B] mt-1">
-            {result.room_type} · {result.design_style}{dims ? ` · ${dims}` : ''} · {instances.length - edit.removed.length + edit.added.length} pieces
+            {[roomLabel, typeLabel, data.design_style, dims].filter(Boolean).join(' · ')} · {instances.length - edit.removed.length + edit.added.length} pieces
           </p>
         </div>
         <div className="flex gap-3">
@@ -182,10 +217,10 @@ export default function DesignDetailPage() {
 
       <div className="grid lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8">
-          <DesignViewer roomUrl={artifacts.room_glb} items={sceneItems} onRoomFrame={setRoomFrame} />
-          {artifacts.images.length > 0 && (
+          <DesignViewer roomUrl={roomUrl} hiddenRoomNodes={scene.hiddenRoomNodes ?? []} items={sceneItems} onRoomFrame={setRoomFrame} />
+          {images.length > 0 && (
             <div className="grid grid-cols-3 gap-3 mt-4">
-              {artifacts.images.slice(0, 3).map((src, i) => (
+              {images.slice(0, 3).map((src, i) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img key={i} src={src} alt="" className="aspect-[4/3] w-full object-cover" />
               ))}
@@ -201,9 +236,9 @@ export default function DesignDetailPage() {
               return (
                 <li key={key} className={`py-3 flex gap-3 ${removed ? 'opacity-50' : ''}`} onMouseEnter={() => setSelected(key)} onMouseLeave={() => setSelected(null)}>
                   <div className="w-16 h-16 bg-[#F5F4F0] shrink-0">
-                    {(p ? productImage(p) : f.photo_url) && (
+                    {(p ? productImage(p) : f.image) && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={p ? productImage(p) : f.photo_url} alt="" className="w-full h-full object-cover" />
+                      <img src={(p ? productImage(p) : f.image) ?? undefined} alt="" className="w-full h-full object-cover" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -211,7 +246,7 @@ export default function DesignDetailPage() {
                     <p className="text-xs text-[#4B4B4B]">{p ? formatPrice(productPrice(p)) : p === null ? 'Not in catalog' : 'Looking up…'}</p>
                     <div className="flex gap-3 mt-1 text-xs">
                       {p && <Link href={`/shop/${p.handle}`} className="underline">View</Link>}
-                      {p && !removed && <button disabled={busy} onClick={() => p.variants?.[0] && add(p.variants[0].id, 1)} className="underline">Add to cart</button>}
+                      {p && !removed && <button disabled={busy} onClick={() => p.variants?.[0] && add(p.variants[0].id, 1, { source: 'design', room_id: data.room?.room_id, design_id: taskId })} className="underline">Add to cart</button>}
                       {removed ? <button onClick={() => restorePiece(key)} className="underline">Put back</button> : <button onClick={() => removePiece(key)} className="text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Remove</button>}
                     </div>
                   </div>
@@ -240,7 +275,7 @@ export default function DesignDetailPage() {
               </li>
             ))}
           </ul>
-          <p className="text-[11px] text-[#8E8E8E] mt-4">Changes are saved to your account and show up in the app too.</p>
+          <p className="text-[11px] text-[#8E8E8E] mt-4">Pieces you remove or add here are saved to your account on this website; the app still shows the design as it was made.</p>
           <button onClick={deleteDesign} className="mt-6 text-xs text-[#8E8E8E] hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Delete this design</button>
         </aside>
       </div>
