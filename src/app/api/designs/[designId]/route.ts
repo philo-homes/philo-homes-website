@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteDesign, designStyle, getCapture, getDesign, getRoom, PipelineError, renameDesign } from '@/lib/designs'
+import { designMode } from '@/lib/designModes'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ designId: s
       room_furniture: capture?.room_furniture ?? [],
       name: design.name,
       design_type: design.design_type,
+      mode: designMode(design),
       design_style: designStyle(design),
       error: design.error_info,
       created_at: design.created_at,

@@ -14,6 +14,7 @@ import { useCart } from '@/context/CartContext'
 import type { CatalogItem, FurnitureItem, RoomFurniturePiece, SceneJson } from '@/lib/designs'
 import { Product, productImage, productPrice, resolveSku } from '@/lib/medusa'
 import { formatPrice } from '@/lib/format'
+import { modeLabel, roomTypeLabel } from '@/lib/designModes'
 import type { AppViewerHandle, ViewerEvent, ViewerSceneData, ViewerSceneExport } from '@/components/AppViewer'
 
 // The app's viewer runs in an iframe; nothing of it renders on the server.
@@ -27,6 +28,7 @@ type Payload = {
   render_running: boolean
   name: string | null
   design_type: string
+  mode: string | null
   design_style: string | null
   error: string | null
   render_urls: string[]
@@ -369,14 +371,24 @@ export default function DesignDetailPage() {
 
   const { room } = data
   const roomLabel = room ? room.name || titleCase(room.room_type) : 'Room'
-  const typeLabel = TYPE_LABEL[data.design_type] ?? data.design_type
+  const typeLabel = data.mode ? modeLabel(data.mode) : TYPE_LABEL[data.design_type] ?? data.design_type
   const dims = room?.room_length && room?.room_width ? `${(room.room_length / 100).toFixed(1)} × ${(room.room_width / 100).toFixed(1)} m` : null
   const images = data.render_urls ?? []
   const roomPiece = (key: string) => data.room_furniture.find((p) => `node:${p.node}` === key)
 
   return (
     <Shell wide>
-      <p className="text-xs text-[#8E8E8E] mb-4"><Link href="/designs">My Designs</Link> / {data.name || roomLabel}</p>
+      <p className="text-xs text-[#8E8E8E] mb-4">
+        <Link href="/designs" className="hover:text-[#10182B]">My Designs</Link>
+        {room && (
+          <>
+            {' / '}<Link href={`/designs?type=${encodeURIComponent(room.room_type)}`} className="hover:text-[#10182B]">{roomTypeLabel(room.room_type)}</Link>
+            {' / '}<Link href={`/designs?type=${encodeURIComponent(room.room_type)}&room=${room.room_id}`} className="hover:text-[#10182B]">{roomLabel}</Link>
+            {data.mode && <>{' / '}<Link href={`/designs?type=${encodeURIComponent(room.room_type)}&room=${room.room_id}&mode=${data.mode}`} className="hover:text-[#10182B]">{modeLabel(data.mode)}</Link></>}
+          </>
+        )}
+        {' / '}<span className="text-[#10182B]">{data.name || typeLabel}</span>
+      </p>
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
           {renaming ? (

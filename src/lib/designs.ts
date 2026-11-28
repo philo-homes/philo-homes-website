@@ -37,6 +37,8 @@ export type RoomRecord = {
   cover_url: string | null
   current_capture: CaptureSummary | null
   design_count: number
+  /** READY, UPLOADING, NOT_BUILT, QUEUED, BUILDING or FAILED (absent on an older backend). */
+  build_state?: string
   /** GET /v1/rooms/{id} only: every capture, newest first. */
   captures?: CaptureSummary[]
 }
@@ -55,6 +57,8 @@ export type Design = {
   thumbnail_url: string | null
   scene?: SceneJson | null
   error_info: string | null
+  /** single_item only: the candidates; `mode` says add or replace. */
+  result?: { mode?: string } | null
   /** scene.json's version; every save sends it back as base_version. */
   version?: number
   render_status?: string | null
