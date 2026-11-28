@@ -10,6 +10,7 @@
 // in per render comes from the embedding page instead (src/components/AppViewer.tsx):
 //   - sceneData / defaultRoom: window.parent.__appViewerInit[<id in ?id=>]
 //   - window.ReactNativeWebView.postMessage: forwarded to the parent with postMessage
+// Web-only change: the "Built room" toggle is hidden (see the end of this file).
 // The app's imperative calls (injectJavaScript "window.fn(arg)") become direct
 // calls on the iframe's window: the page is same-origin.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -78,6 +79,10 @@ const bridge = `
       })();
     </script>`
 replace('<head>', `<head>${bridge}`)
+
+// Web-only: no "Built room" toggle. It swaps the room for a plain box the viewer
+// builds itself, which customers took for a different room. The app keeps it.
+replace('</head>', `<style>#room-mode { display: none !important; }</style>\n      </head>`)
 
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, html)

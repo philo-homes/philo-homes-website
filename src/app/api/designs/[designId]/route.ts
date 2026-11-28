@@ -42,8 +42,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ designId: s
       error: design.error_info,
       created_at: design.created_at,
       render_urls: design.render_urls ?? [],
-      // The room GLB goes through /api/room-glb (its bucket has no CORS rule).
-      scene: design.scene ? { ...design.scene, roomUrl: design.scene.roomUrl && `/api/room-glb?u=${encodeURIComponent(design.scene.roomUrl)}` } : null,
+      // roomUrl is presigned on the room bucket, which allows the site's origins (CORS).
+      scene: design.scene ?? null,
       room: room && {
         room_id: room.room_id,
         name: room.name,
